@@ -154,8 +154,10 @@ class MultiheadCrossAttention(nn.Module):
         # projection
         self.W_o = nn.Linear(d_model, d_model, bias=False)
 
-        self.attn_dropout = nn.Dropout(p_drop)
-        self.resid_dropout = nn.Dropout(p_drop)
+        #self.attn_dropout = nn.Dropout(p_drop)
+        #self.resid_dropout = nn.Dropout(p_drop)
+        self.attn_dropout = nn.Identity()
+        self.resid_dropout = nn.Identity()
 
     def scaled_dot_product_attention(self, q, k, v, mask=None):
         attn_scores = \

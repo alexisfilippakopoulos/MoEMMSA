@@ -1435,6 +1435,7 @@ class MoeMMBlock(nn.Module):
         # combined cross-attention
         self.combine = config.get("combine", False)
         self.reset_expert_usage_stats()
+        self.delta_dropout = nn.Dropout(0.1)
 
     def reset_expert_usage_stats(self):
         self.expert_usage_stats = {
@@ -1447,7 +1448,7 @@ class MoeMMBlock(nn.Module):
     def get_expert_usage_stats(self):
         return self.expert_usage_stats.copy()
 
-    def forward(self, x_q, z_a, z_v, z_av, x_prev=None, x_kv=None):
+    def old_slow_forward(self, x_q, z_a, z_v, z_av, x_prev=None, x_kv=None):
         #import pdb; pdb.set_trace()
         x_q = x_q[0]
         B, _, D = x_q.size()
@@ -1477,7 +1478,7 @@ class MoeMMBlock(nn.Module):
                 expert_output = expert(x_q[b:b+1], context[b:b+1])
 
                 delta_x_f[b:b+1] += weight * expert_output
-
+    
         x_f_updated = x_q + self.gate_1(self.alpha_1) * delta_x_f
 
         if self.combine:
@@ -1494,3 +1495,58 @@ class MoeMMBlock(nn.Module):
         # x = (x, cache)
         x_f_updated = (x_f_updated,)
         return x_f_updated
+
+
+    def forward(self, x_q, z_a, z_v, z_av, x_prev=None, x_kv=None):
+        x_q = x_q[0]                              # [B, T, D]
+        B, T, D = x_q.shape
+        norm_x_q = self.ln_1(x_q)
+
+        top_k_weights, top_k_indices, _ = self.router(
+            norm_x_q, z_a, z_v, z_av
+        )                                         # [B, K]
+
+        delta_x_f = torch.zeros_like(x_q)
+
+        contexts = [z_a, z_v, z_av]
+
+    # ---- MoE dispatch (vectorized) ----
+        for expert_idx, expert in enumerate(self.experts):
+        # mask: which (b,k) route to this expert
+            mask = (top_k_indices == expert_idx)  # [B, K]
+
+            if not mask.any():
+                continue
+
+        # indices of routed samples
+            b_idx, k_idx = mask.nonzero(as_tuple=True)
+
+        # gather inputs
+            x_in = x_q[b_idx]                     # [N, T, D]
+            ctx  = contexts[expert_idx][b_idx]   # [N, T, D]
+
+        # expert forward (batched)
+            out = expert(x_in, ctx)               # [N, T, D]
+
+        # apply weights
+            w = top_k_weights[b_idx, k_idx].view(-1, 1, 1)
+            out = out * w
+
+        # scatter-add back to batch dimension
+            delta_x_f.index_add_(0, b_idx, out)
+
+        # exact stats match
+            self.expert_usage_stats[expert_idx] += b_idx.numel()
+
+    # ---- rest unchanged ----
+        delta_x_f = self.delta_dropout(delta_x_f)
+        x_f_updated = x_q + self.gate_1(self.alpha_1) * delta_x_f
+
+        if self.combine:
+            x_comb = torch.cat((x_prev, x_f_updated), dim=1)
+            x_f_updated = x_comb + self.gate_2(self.alpha_2) * self.mlp(self.ln_2(x_comb))
+        else:
+            x_f_updated = x_f_updated + self.gate_2(self.alpha_2) * self.mlp(self.ln_2(x_f_updated))
+
+        return (x_f_updated,)
+
