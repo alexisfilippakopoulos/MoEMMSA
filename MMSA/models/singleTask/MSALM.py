@@ -872,7 +872,8 @@ class MSALM(nn.Module):
 
         # ------ language model ----------
         if 'chinese' in config.lm:
-            lm_hf_path = f"uer/{config.lm}"
+            # lm_hf_path = f"uer/{config.lm}"
+            lm_hf_path = config.lm
         else:
             lm_hf_path = config.lm
             

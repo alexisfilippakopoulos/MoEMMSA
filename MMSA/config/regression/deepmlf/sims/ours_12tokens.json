@@ -1,6 +1,6 @@
 {
     "datasetCommonParams": {
-        "dataset_root_dir": "/home/alex/Downloads/MSA-Datasets",
+        "dataset_root_dir": "/leonardo_work/EUHPC_A04_051/alexfil/MSA-Datasets/",
         "mosi": {
             "aligned": {
                 "featurePath": "mosi/Processed/aligned_50.pkl",
@@ -115,7 +115,7 @@
         },
         "sims": {
             "unaligned": {
-                "featurePath": "CH-SIMS/Processed/unaligned_39.pkl",
+                "featurePath": "CH-SIMS/unaligned_39.pkl",
                 "seq_lens": [
                     39,
                     400,
@@ -168,7 +168,7 @@
                 "del_model": true,
                 "max_token_len": 39,
                 "pad_token": "<|endoftext|>",
-                "lm": "gpt2-chinese-cluecorpussmall",
+                "lm": "/leonardo_work/EUHPC_A04_051/alexfil/gpt2-chinese-cluecorpussmall",
                 "use_bf16": false,
                 "task_out": 1,
                 "use_clm": true,
@@ -184,7 +184,7 @@
                 "rescale": false,
                 "rescaler": "sqrt",
                 "use_seqaug": true,
-                "n_bn_fusion": 25,
+                "n_bn_fusion": 12,
                 "modded_loss": true,
                 "embedding_attr_name": "transformer.wte",
                 "decoder_layers_attr_name": "transformer.h",
@@ -236,7 +236,7 @@
                 "av_enc": {
                     "finetune": true,
                     "from_pretrained": true,
-                    "path_to_pretrained": "/home/alex/Downloads/bienc-sims-1990.pth",
+                    "path_to_pretrained": "/leonardo_work/EUHPC_A04_051/alexfil/DeepMLF-Reprod/checkpoints/bienc-sims-1990/bienc-sims-1990.pth",
                     "feature_dims": [
                         768,
                         33,

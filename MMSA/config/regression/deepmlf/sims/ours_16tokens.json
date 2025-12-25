@@ -1,6 +1,6 @@
 {
     "datasetCommonParams": {
-        "dataset_root_dir": "/data/efthygeo/mmsa",
+        "dataset_root_dir": "/leonardo_work/EUHPC_A04_051/alexfil/MSA-Datasets/",
         "mosi": {
             "aligned": {
                 "featurePath": "mosi/Processed/aligned_50.pkl",
@@ -115,7 +115,7 @@
         },
         "sims": {
             "unaligned": {
-                "featurePath": "sims/Processed/unaligned_39.pkl",
+                "featurePath": "CH-SIMS/unaligned_39.pkl",
                 "seq_lens": [
                     39,
                     400,
@@ -161,14 +161,14 @@
         },
         "datasetParams": {
             "sims": {
-                "hfPath": "sims/Processed/mms2s",
+                "hfPath": false,
                 "use_ulgm": false,
                 "update_labels_patience": 1,
                 "H": 3.0,
                 "del_model": true,
                 "max_token_len": 39,
                 "pad_token": "<|endoftext|>",
-                "lm": "gpt2-chinese-cluecorpussmall",
+                "lm": "/leonardo_work/EUHPC_A04_051/alexfil/gpt2-chinese-cluecorpussmall",
                 "use_bf16": false,
                 "task_out": 1,
                 "use_clm": true,
@@ -184,7 +184,7 @@
                 "rescale": false,
                 "rescaler": "sqrt",
                 "use_seqaug": true,
-                "n_bn_fusion": 20,
+                "n_bn_fusion": 16,
                 "modded_loss": true,
                 "embedding_attr_name": "transformer.wte",
                 "decoder_layers_attr_name": "transformer.h",
@@ -236,7 +236,7 @@
                 "av_enc": {
                     "finetune": true,
                     "from_pretrained": true,
-                    "path_to_pretrained": "checkpoints/bienc-sims-nat-5e-4-BN-nl-3-d-30/bienc-sims-1993.pth",
+                    "path_to_pretrained": "/leonardo_work/EUHPC_A04_051/alexfil/DeepMLF-Reprod/checkpoints/bienc-sims-1990/bienc-sims-1990.pth",
                     "feature_dims": [
                         768,
                         33,
