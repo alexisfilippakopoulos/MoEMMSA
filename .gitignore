@@ -9,3 +9,4 @@ MMSA/trains/singleTask/__pycache__/
 MMSA/transformations/pool/__pycache__/
 MMSA/utils/__pycache__/
 checkpoints/
+logs/slurm/

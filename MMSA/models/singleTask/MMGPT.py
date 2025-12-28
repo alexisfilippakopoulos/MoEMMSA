@@ -188,6 +188,77 @@ class MultiheadCrossAttention(nn.Module):
         output = self.resid_dropout(self.W_o(self.combine_heads(attn_output)))
         return output
 
+class MultiheadSelfAttention(nn.Module):
+    ''' Multi-Head Self Attention module '''
+    def __init__(self, n_head, d_model, p_drop=0.1):
+        super().__init__()
+        self.n_head = n_head
+        self.d_model = d_model
+        self.d_head = d_model // n_head
+        
+        assert d_model % n_head == 0
+        
+        # Combined QKV projection
+        self.W_qkv = nn.Linear(d_model, 3 * d_model, bias=False)
+        
+        # Output projection
+        self.W_o = nn.Linear(d_model, d_model, bias=False)
+        
+        self.attn_dropout = nn.Dropout(p_drop)
+        self.resid_dropout = nn.Dropout(p_drop)
+    
+    def scaled_dot_product_attention(self, q, k, v, mask=None):
+        # q, k, v: (B, nh, T, hs)
+        attn_scores = torch.matmul(q, k.transpose(-2, -1)) / math.sqrt(self.d_head)
+        
+        if mask is not None:
+            attn_scores = attn_scores.masked_fill(mask == 0, -1e9)
+        
+        attn_probs = torch.softmax(attn_scores, dim=-1)
+        attn_probs = self.attn_dropout(attn_probs)
+        
+        # (B, nh, T, T) x (B, nh, T, hs) -> (B, nh, T, hs)
+        output = torch.matmul(attn_probs, v)
+        return output, attn_probs
+    
+    def split_heads(self, x):
+        # x: (B, T, d_model)
+        batch_size, seq_length, d_model = x.size()
+        # (B, T, nh, hs) -> (B, nh, T, hs)
+        return x.view(batch_size, seq_length, self.n_head, self.d_head).transpose(1, 2)
+    
+    def combine_heads(self, x):
+        # x: (B, nh, T, hs)
+        batch_size, _, seq_length, _ = x.size()
+        # (B, nh, T, hs) -> (B, T, nh, hs) -> (B, T, d_model)
+        return x.transpose(1, 2).contiguous().view(batch_size, seq_length, self.d_model)
+    
+    def forward(self, x, mask=None, return_attention=False):
+        # x: (B, T, d_model)
+        batch_size, seq_length, _ = x.size()
+        
+        # Single projection for Q, K, V
+        qkv = self.W_qkv(x)  # (B, T, 3*d_model)
+        
+        # Split into Q, K, V
+        q, k, v = qkv.split(self.d_model, dim=2)
+        
+        # Split heads
+        q = self.split_heads(q)  # (B, nh, T, hs)
+        k = self.split_heads(k)  # (B, nh, T, hs)
+        v = self.split_heads(v)  # (B, nh, T, hs)
+        
+        # Attention
+        attn_output, attn_probs = self.scaled_dot_product_attention(q, k, v, mask)
+        
+        # Combine heads and project
+        output = self.combine_heads(attn_output)  # (B, T, d_model)
+        output = self.resid_dropout(self.W_o(output))
+        
+        if return_attention:
+            return output, attn_probs
+        return output
+
 class MLP(nn.Module):
     def __init__(self, config):
         super().__init__()

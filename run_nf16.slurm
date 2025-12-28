@@ -31,8 +31,8 @@ python experiments/regression/mult_base.py \
   -m msalm \
   -d sims \
   -g 0 \
-  --exp-name test_topk \
+  --exp-name lr_0001__k_3__nf_16-v2-sa \
   -c MMSA/config/regression/deepmlf/sims/ours_16tokens.json \
-  --res-save-dir MMSA/results/sims/test_topk \
+  --res-save-dir MMSA/results/sims/lrs_0001/mmrouter/k_3/nf_16-v2-sa \
   -n 2 \
   -s 1990 -s 1991 -s 1992 -s 1993 -s 1994

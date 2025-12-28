@@ -8,7 +8,7 @@ from typing import Optional
 import torch.distributions as D
 from transformers import AutoTokenizer, AutoModelForCausalLM, AutoConfig
 from MMSA.models.singleTask.MMGPT import (AV_Enc,
-                                          MultiheadCrossAttention,
+                                          MultiheadCrossAttention, MultiheadSelfAttention,
                                           LoRA_MLP, LayerNorm, MLP)
 
 ###################################################################################################
@@ -1405,6 +1405,7 @@ class MoeMMBlock(nn.Module):
             self.kdim = config.get("kv_dim", config.n_embd)
             self.ln_1 = LayerNorm(config.n_embd, config.bias)
             self.ln_2 = LayerNorm(config.n_embd, config.bias)
+            self.ln_sa = LayerNorm(config.n_embd, config.bias) 
             if config.use_lora:
                 self.mlp = LoRA_MLP(config)
             else:
@@ -1435,6 +1436,12 @@ class MoeMMBlock(nn.Module):
 
         # combined cross-attention
         self.combine = config.get("combine", False)
+        self.self_attn = MultiheadSelfAttention(
+            config.n_head,
+            config.n_embd,
+            0.1)
+        self.alpha_sa = nn.Parameter(torch.zeros(1))
+        self.gate_sa = nn.Sigmoid()
         self.reset_expert_usage_stats()
         self.delta_dropout = nn.Dropout(0.1)
 
@@ -1503,11 +1510,11 @@ class MoeMMBlock(nn.Module):
         B, T, D = x_q.shape
         norm_x_q = self.ln_1(x_q)
 
-        #top_k_weights, top_k_indices, _ = self.router(
-        #    norm_x_q, z_a, z_v, z_av
-        #)                                         # [B, K]
+        top_k_weights, top_k_indices, _ = self.router(
+            norm_x_q, z_a, z_v, z_av
+        )                                         # [B, K]
         
-        top_k_weights, top_k_indices, _ = self.router(norm_x_q)
+        #top_k_weights, top_k_indices, _ = self.router(norm_x_q)
 
         delta_x_f = torch.zeros_like(x_q)
 
@@ -1548,6 +1555,7 @@ class MoeMMBlock(nn.Module):
         if self.combine:
             x_comb = torch.cat((x_prev, x_f_updated), dim=1)
             x_f_updated = x_comb + self.gate_2(self.alpha_2) * self.mlp(self.ln_2(x_comb))
+            x_f_updated = x_f_updated + self.gate_sa(self.alpha_sa) * self.self_attn(self.ln_sa(x_f_updated))
         else:
             x_f_updated = x_f_updated + self.gate_2(self.alpha_2) * self.mlp(self.ln_2(x_f_updated))
 
