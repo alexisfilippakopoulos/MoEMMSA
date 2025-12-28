@@ -202,7 +202,8 @@
                         10,
                         11
                     ],
-                    "layer_dropout": 0.0,
+                    "top_k": 2,
+		    "layer_dropout": 0.0,
                     "dense": true,
                     "tie_ffn": true,
                     "n_embd": 768,

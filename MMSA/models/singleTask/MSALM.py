@@ -721,10 +721,11 @@ class msaLMMixin(nn.Module):
                 for layer_idx in range(len(ca_list))
             ]
         )"""
+        top_k = self.msa_config["mmgpt"].get("top_k", 2)
         ca_layers = nn.ModuleList(
             [
                 MoeMMBlock(
-                    self.msa_config["mmgpt"], layer_idx, top_k=2
+                    self.msa_config["mmgpt"], layer_idx, top_k=top_k
                 )
                 for layer_idx in range(len(ca_list))
             ]
@@ -1502,9 +1503,11 @@ class MoeMMBlock(nn.Module):
         B, T, D = x_q.shape
         norm_x_q = self.ln_1(x_q)
 
-        top_k_weights, top_k_indices, _ = self.router(
-            norm_x_q, z_a, z_v, z_av
-        )                                         # [B, K]
+        #top_k_weights, top_k_indices, _ = self.router(
+        #    norm_x_q, z_a, z_v, z_av
+        #)                                         # [B, K]
+        
+        top_k_weights, top_k_indices, _ = self.router(norm_x_q)
 
         delta_x_f = torch.zeros_like(x_q)
 

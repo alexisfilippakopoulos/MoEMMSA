@@ -8,7 +8,7 @@
 # --- Single GPU / single task ---
 #SBATCH --ntasks=1
 #SBATCH --gres=gpu:1
-#SBATCH --cpus-per-task=8
+#SBATCH --cpus-per-task=4
 
 # --- Short runtime ---
 #SBATCH --time=08:00:00
@@ -31,8 +31,8 @@ python experiments/regression/mult_base.py \
   -m msalm \
   -d sims \
   -g 0 \
-  --exp-name lr_0001__k_2__nf_16-v2 \
+  --exp-name test_topk \
   -c MMSA/config/regression/deepmlf/sims/ours_16tokens.json \
-  --res-save-dir MMSA/results/sims/lrs_0001/k_2/nf_16-v2 \
+  --res-save-dir MMSA/results/sims/test_topk \
   -n 2 \
   -s 1990 -s 1991 -s 1992 -s 1993 -s 1994

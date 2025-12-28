@@ -31,8 +31,8 @@ python experiments/regression/mult_base.py \
   -m msalm \
   -d sims \
   -g 0 \
-  --exp-name lr_0001__k_2__nf_20-v2 \
+  --exp-name lr_0001__k_1__nf_20-v2 \
   -c MMSA/config/regression/deepmlf/sims/ours_20tokens.json \
-  --res-save-dir MMSA/results/sims/lrs_0001/k_2/nf_20-v2 \
+  --res-save-dir MMSA/results/sims/lrs_0001/sparserouter/k_1/nf_20-v2 \
   -n 2 \
   -s 1990 -s 1991 -s 1992 -s 1993 -s 1994
