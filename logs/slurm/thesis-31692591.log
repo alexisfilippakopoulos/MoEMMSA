@@ -1,0 +1,24 @@
+Loading gcc/11.3.0
+  Loading requirement: gmp/6.2.1 mpfr/4.1.0 mpc/1.2.1
+$$$$$$$$$$$$$$$$$$$$$$$$$$$$$Running in normal mode.$$$$$$$$$$$$$$$$$$$$$$$$$$$$$
+Loading HF datasets
+---------------------- Ongoing with TRAIN data split -----------------------------
+Using GPT LM
+Using Chinese LM
+All the sequence lengths are L:39, A:400, V:55
+Preprocessing custom M-SENA pickles
+audio features are (1368, 400, 33)
+vision features are (1368, 55, 709)
+Starting processing --------------------->
+Using chinese causal LM
+(1368, 400, 33)
+(1368, 55, 709)
+---------------------- Ongoing with VALID data split -----------------------------
+Using GPT LM
+Using Chinese LM
+All the sequence lengths are L:39, A:400, V:55
+Preprocessing custom M-SENA pickles
+audio features are (1368, 400, 33)
+vision features are (1368, 55, 709)
+Starting processing --------------------->
+Using chinese causal LM

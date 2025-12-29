@@ -1259,7 +1259,7 @@ class SparseRouter(nn.Module):
         top_k_weights = top_k_weights / (top_k_weights.sum(dim=-1, keepdim=True) + 1e-10)
         return top_k_weights, top_k_indices, all_weights
 
-class SparseTokenRouter(nn.Module):
+class SparseMMTokenRouter(nn.Module):
     def __init__(self, config, n_experts, top_k, d_av):
         super().__init__()
         self.n_experts = n_experts
@@ -1319,6 +1319,39 @@ class SparseTokenRouter(nn.Module):
         # top_k_weights: [B, T_f, k]
         # top_k_indices: [B, T_f, k]
         # all_weights:   [B, T_f, n_experts] (useful for load balancing loss)
+        return top_k_weights, top_k_indices, all_weights
+
+class SparseTokenRouter(nn.Module):
+    def __init__(self, config, n_experts, top_k):
+        super().__init__()
+        self.n_experts = n_experts
+        self.top_k = top_k
+        
+        self.d_fusion = config.n_embd  # 
+
+        # Router now only sees x_f
+        self.router_weights = nn.Linear(self.d_fusion, n_experts)
+
+    def forward(self, x_f):
+        """
+        x_f : [B, T_f, 768] -> learnable fusion tokens
+        """
+        # Token-level routing
+        logits = self.router_weights(x_f)  # [B, T_f, n_experts]
+
+        # Softmax over experts
+        all_weights = F.softmax(logits, dim=-1)
+
+        # Top-K expert selection per token
+        top_k_weights, top_k_indices = torch.topk(
+            all_weights, self.top_k, dim=-1
+        )
+
+        # Re-normalize selected weights
+        top_k_weights = top_k_weights / (
+            top_k_weights.sum(dim=-1, keepdim=True) + 1e-10
+        )
+
         return top_k_weights, top_k_indices, all_weights
 
 class MMSparseRouter(nn.Module):
@@ -1399,7 +1432,9 @@ class MoeMMBlock(nn.Module):
         ])
 
         #self.router = SparseRouter(config, n_experts=len(self.experts), top_k=top_k, idx=layer_idx)
-        self.router = MMSparseRouter(n_experts=len(self.experts), top_k=top_k, d_av=30, d_model=768)
+        #self.router = MMSparseRouter(n_experts=len(self.experts), top_k=top_k, d_av=30, d_model=768)
+        #self.router = SparseTokenRouter(config, len(self.experts), top_k)
+        self.router = SparseMMTokenRouter(config, n_experts=len(self.experts), top_k=top_k, d_av=30)
 
         if "gpt" in self.lm_flavor:
             self.kdim = config.get("kv_dim", config.n_embd)
@@ -1498,7 +1533,7 @@ class MoeMMBlock(nn.Module):
         return x_f_updated
 
 
-    def forward(self, x_q, z_a, z_v, z_av, x_prev=None, x_kv=None):
+    def old_faster_forward(self, x_q, z_a, z_v, z_av, x_prev=None, x_kv=None):
         x_q = x_q[0]                              # [B, T, D]
         B, T, D = x_q.shape
         norm_x_q = self.ln_1(x_q)
@@ -1552,4 +1587,70 @@ class MoeMMBlock(nn.Module):
             x_f_updated = x_f_updated + self.gate_2(self.alpha_2) * self.mlp(self.ln_2(x_f_updated))
 
         return (x_f_updated,)
+    
+    def forward(self, x_q, z_a, z_v, z_av, x_prev=None, x_kv=None):
+        # x_q: tuple -> [B, T_f, D]
+        x_q = x_q[0]
+        B, T_f, D = x_q.shape
 
+        norm_x_q = self.ln_1(x_q)
+
+        # ---- TOKEN-WISE ROUTING ----
+        top_k_weights, top_k_indices, _ = self.router(norm_x_q, z_a, z_v, z_av)
+        # shapes: [B, T_f, K]
+
+        delta_x_f = torch.zeros_like(x_q)
+
+        contexts = [z_a, z_v, z_av]
+
+        # flatten token dimension for clean scatter
+        flat_delta = delta_x_f.view(B * T_f, D)
+
+        # ---- TOKEN-WISE MoE DISPATCH ----
+        for expert_idx, expert in enumerate(self.experts):
+
+            # mask tokens routed to this expert
+            mask = (top_k_indices == expert_idx)  # [B, T_f, K]
+            if not mask.any():
+                continue
+
+            # routed token indices
+            b_idx, t_idx, k_idx = mask.nonzero(as_tuple=True)
+
+            # ---- gather queries ----
+            # shape: [N, 1, D]
+            q_tokens = norm_x_q[b_idx, t_idx].unsqueeze(1)
+
+            # ---- gather full modality context ----
+            # shape: [N, T_ctx, D_ctx]
+            ctx = contexts[expert_idx][b_idx]
+
+            # ---- expert cross-attention ----
+            out = expert(q_tokens, ctx)  # [N, 1, D]
+            out = out.squeeze(1)         # [N, D]
+
+            # ---- apply routing weights ----
+            w = top_k_weights[b_idx, t_idx, k_idx].unsqueeze(-1)  # [N, 1]
+            out = out * w
+
+            # ---- scatter back ----
+            flat_idx = b_idx * T_f + t_idx
+            flat_delta.index_add_(0, flat_idx, out)
+
+            # stats
+            self.expert_usage_stats[expert_idx] += b_idx.numel()
+
+        delta_x_f = flat_delta.view(B, T_f, D)
+
+        # ---- GATED RESIDUAL FUSION ----
+        delta_x_f = self.delta_dropout(delta_x_f)
+        x_f_updated = x_q + self.gate_1(self.alpha_1) * delta_x_f
+
+        # ---- FEED-FORWARD ----
+        if self.combine:
+            x_comb = torch.cat((x_prev, x_f_updated), dim=1)
+            x_f_updated = x_comb + self.gate_2(self.alpha_2) * self.mlp(self.ln_2(x_comb))
+        else:
+            x_f_updated = x_f_updated + self.gate_2(self.alpha_2) * self.mlp(self.ln_2(x_f_updated))
+
+        return (x_f_updated,)

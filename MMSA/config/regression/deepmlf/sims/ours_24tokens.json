@@ -202,6 +202,7 @@
                         10,
                         11
                     ],
+		    "top_k": 3,
                     "layer_dropout": 0.0,
                     "dense": true,
                     "tie_ffn": true,
@@ -273,8 +274,8 @@
                 "patience": 10,
                 "weight_decay_mmgpt": 0.1,
                 "weight_decay_av": 0.1,
-                "learning_rate_av": 0.0001,
-                "learning_rate_mmgpt": 0.0001
+                "learning_rate_av": 0.0002,
+                "learning_rate_mmgpt": 0.0002
             }
         }
     }
