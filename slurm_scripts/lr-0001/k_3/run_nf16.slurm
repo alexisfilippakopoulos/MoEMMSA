@@ -32,7 +32,7 @@ python experiments/regression/mult_base.py \
   -d sims \
   -g 0 \
   --exp-name lr_0001__k_3__nf_16-v2 \
-  -c MMSA/config/regression/deepmlf/sims/ours_16tokens.json \
-  --res-save-dir MMSA/results/sims/lrs_0001/sparse-mm-token-lvl-router/k_3/nf_16-v2 \
+  -c MMSA/config/regression/deepmlf/sims/lr-0001/k_3/ours_16tokens.json \
+  --res-save-dir MMSA/results/sims/lrs_0001/sparse-mm-token-lvl-router/k_3/nf_16-v2-test \
   -n 2 \
   -s 1990 -s 1991 -s 1992 -s 1993 -s 1994
