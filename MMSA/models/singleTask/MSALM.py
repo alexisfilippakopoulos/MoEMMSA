@@ -1272,7 +1272,11 @@ class SparseMMTokenRouter(nn.Module):
         # Input dim = Token_Dim (768) + Context_Dim (3 * 30)
         self.d_total = self.d_fusion + 3 * self.d_av
         
-        self.router_weights = nn.Linear(self.d_total, n_experts)
+        #self.router_weights = nn.Linear(self.d_total, n_experts)
+        self.router_weights = nn.Linear(self.d_total, 2 * self.d_total)
+        self.router_weightsv2 = nn.Linear(2 * self.d_total, n_experts)
+        #self.skip_router = nn.Linear(self.d_total, n_experts)
+        nn.init.zeros_(self.router_weightsv2.bias)
 
     def forward(self, x_f, z_a, z_v, z_av):
         """
@@ -1301,8 +1305,10 @@ class SparseMMTokenRouter(nn.Module):
         router_input = torch.cat([x_f, context_expanded], dim=-1)
 
         # 4. Token-Level Routing
-        # The Linear layer is applied to every token independently
-        logits = self.router_weights(router_input) # [B, T_f, n_experts]
+        # The Linear layer is applied to every token independently # [B, T_f, n_experts]
+        logits = self.router_weightsv2(F.gelu(self.router_weights(router_input)))
+        #skip = self.skip_router(router_input)
+        #logits = residual + skip
         
         # Apply Softmax over the experts dimension
         all_weights = F.softmax(logits, dim=-1)
@@ -1440,7 +1446,7 @@ class MoeMMBlock(nn.Module):
             self.kdim = config.get("kv_dim", config.n_embd)
             self.ln_1 = LayerNorm(config.n_embd, config.bias)
             self.ln_2 = LayerNorm(config.n_embd, config.bias)
-            self.ln_sa = LayerNorm(config.n_embd, config.bias)
+            #self.ln_sa = LayerNorm(config.n_embd, config.bias)
             if config.use_lora:
                 self.mlp = LoRA_MLP(config)
             else:
@@ -1471,12 +1477,12 @@ class MoeMMBlock(nn.Module):
 
         # combined cross-attention
         self.combine = config.get("combine", False)
-        self.self_attn = MultiheadSelfAttention(
-            config.n_head,
-            config.n_embd,
-            0.1)
-        self.alpha_sa = nn.Parameter(torch.zeros(1))
-        self.gate_sa = nn.Sigmoid()
+        #self.self_attn = MultiheadSelfAttention(
+            #config.n_head,
+            #config.n_embd,
+            #0.1)
+        #self.alpha_sa = nn.Parameter(torch.zeros(1))
+        #self.gate_sa = nn.Sigmoid()
         self.reset_expert_usage_stats()
         self.delta_dropout = nn.Dropout(0.1)
 
@@ -1529,7 +1535,7 @@ class MoeMMBlock(nn.Module):
             x_comb = torch.cat((x_prev, x_f_updated), dim=1)
             # PAPER: gated cross-attention version (torch.Size([32, 59, 768]))
             x_f_updated = x_comb + self.gate_2(self.alpha_2) * self.mlp(self.ln_2(x_comb))
-            x_f_updated = x_f_updated + self.gate_sa(self.alpha_sa) * self.self_attn(self.ln_sa(x_f_updated))
+            #x_f_updated = x_f_updated + self.gate_sa(self.alpha_sa) * self.self_attn(self.ln_sa(x_f_updated))
             # ablation: no-gate version
             # x = x_comb + self.mlp(self.ln_2(x_comb))
             # x = x_comb + self.mlp(self.ln_2(x_comb))
