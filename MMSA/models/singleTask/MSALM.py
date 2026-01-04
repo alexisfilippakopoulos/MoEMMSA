@@ -1272,11 +1272,11 @@ class SparseMMTokenRouter(nn.Module):
         # Input dim = Token_Dim (768) + Context_Dim (3 * 30)
         self.d_total = self.d_fusion + 3 * self.d_av
         
-        #self.router_weights = nn.Linear(self.d_total, n_experts)
-        self.router_weights = nn.Linear(self.d_total, 2 * self.d_total)
-        self.router_weightsv2 = nn.Linear(2 * self.d_total, n_experts)
+        self.router_weights = nn.Linear(self.d_total, n_experts)
+        #self.router_weights = nn.Linear(self.d_total, 2 * self.d_total)
+        #self.router_weightsv2 = nn.Linear(2 * self.d_total, n_experts)
         #self.skip_router = nn.Linear(self.d_total, n_experts)
-        nn.init.zeros_(self.router_weightsv2.bias)
+        #nn.init.zeros_(self.router_weightsv2.bias)
 
     def forward(self, x_f, z_a, z_v, z_av):
         """
@@ -1306,10 +1306,10 @@ class SparseMMTokenRouter(nn.Module):
 
         # 4. Token-Level Routing
         # The Linear layer is applied to every token independently # [B, T_f, n_experts]
-        logits = self.router_weightsv2(F.gelu(self.router_weights(router_input)))
+        #logits = self.router_weightsv2(F.gelu(self.router_weights(router_input)))
         #skip = self.skip_router(router_input)
         #logits = residual + skip
-        
+        logits = self.router_weights(router_input)
         # Apply Softmax over the experts dimension
         all_weights = F.softmax(logits, dim=-1)
 

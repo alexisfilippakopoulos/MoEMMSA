@@ -1,0 +1,6 @@
+Traceback (most recent call last):
+  File "/leonardo_work/EUHPC_A04_051/alexfil/DeepMLF-Reprod/experiments/regression/mult_base.py", line 16, in <module>
+    cfg = get_config_regression(
+  File "/leonardo_work/EUHPC_A04_051/alexfil/DeepMLF-Reprod/experiments/regression/../../MMSA/config.py", line 24, in get_config_regression
+    with open(config_file, 'r') as f:
+FileNotFoundError: [Errno 2] No such file or directory: 'MMSA/config/regression/deepmlf/mosei/large_best_k3_0002.json'
