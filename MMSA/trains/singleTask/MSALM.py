@@ -822,7 +822,7 @@ class MSALM():
     
     def do_test(self, model, dataloader, mode="VAL", return_sample_results=False):
         model.eval()
-        print(f"Model alphas are")
+        """print(f"Model alphas are")
         if 'gpt' in self.lm_flavor:
             for n, p in model.Model.lang_encoder.transformer.h.named_parameters():
                 if "alpha" in n:
@@ -830,7 +830,7 @@ class MSALM():
         else:
             for n, p in model.Model.lang_encoder.model.layers.named_parameters():
                 if "alpha" in n:
-                    print(f"{n} is: {p}")
+                    print(f"{n} is: {p}")"""
         y_pred, y_true = [], []
         if self.use_ulgm:
             y_pred = {'fusion': [], 'av': [], 'text': [], 'bn': []}
