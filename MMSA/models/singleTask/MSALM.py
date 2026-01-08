@@ -416,7 +416,7 @@ class msaLMLayer(nn.Module):
         # self.ldrop = ldrop
         self.tie_ffw()
     
-    def tie_ffw(self):
+    """def tie_ffw(self):
         if self.ca_layer is not None:
             print("COpying---------------------------------")
             if "gpt" in self.lm_flavor:
@@ -444,7 +444,33 @@ class msaLMLayer(nn.Module):
 
                 self.ca_layer.mlp.down_proj.weight.data.copy_(
                     self.decoder_layer.mlp.down_proj.weight.data
-                )
+                )"""
+    
+    def tie_ffw(self):
+        if self.ca_layer is not None:
+            # Check if we are dealing with our new MoeMMBlock
+            if hasattr(self.ca_layer, 'expert_mlps'):
+                print(f"Initializing {len(self.ca_layer.expert_mlps)} Expert MLPs from Decoder...")
+                for expert_mlp in self.ca_layer.expert_mlps:
+                    self._copy_weights(expert_mlp, self.decoder_layer.mlp)
+            # Fallback for standard single-MLP blocks
+            elif hasattr(self.ca_layer, 'mlp'):
+                print("Initializing Single MM MLP from Decoder...")
+                self._copy_weights(self.ca_layer.mlp, self.decoder_layer.mlp)
+
+    def _copy_weights(self, target_mlp, source_mlp):
+        """Helper to handle weight copying based on LM flavor"""
+        if "gpt" in self.lm_flavor:
+            assert target_mlp.c_fc.weight.shape == source_mlp.c_fc.weight.shape[::-1]
+            with torch.no_grad():
+                target_mlp.c_fc.weight.copy_(source_mlp.c_fc.weight.data.t())
+                target_mlp.c_proj.weight.copy_(source_mlp.c_proj.weight.data.t())
+        else:
+            # Llama flavor
+            with torch.no_grad():
+                target_mlp.gate_proj.weight.data.copy_(source_mlp.gate_proj.weight.data)
+                target_mlp.up_proj.weight.data.copy_(source_mlp.up_proj.weight.data)
+                target_mlp.down_proj.weight.data.copy_(source_mlp.down_proj.weight.data)
             
     def is_conditioned(self) -> bool:
         """Check whether the layer is conditioned."""
@@ -1534,7 +1560,7 @@ class MoeMMBlock(nn.Module):
 
         # expert forward (batched)
             attn_out = exp_ca(x_in, ctx)               # [N, T, D]
-            ffw_out = exp_ffw(attn_out)               # [N, T, D]
+            ffw_out = exp_ffw(self.ln_2(attn_out))               # [N, T, D]
 
             expert_update = (self.gate_1(self.alpha_1) * attn_out) + \
                             (self.gate_2(self.alpha_2) * ffw_out)
