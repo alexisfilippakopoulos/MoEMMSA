@@ -1438,9 +1438,9 @@ class MoeMMBlock(nn.Module):
         ])
 
         #self.router = SparseRouter(config, n_experts=len(self.experts), top_k=top_k, idx=layer_idx)
-        #self.router = MMSparseRouter(n_experts=len(self.experts), top_k=top_k, d_av=30, d_model=768)
+        self.router = MMSparseRouter(n_experts=len(self.experts), top_k=top_k, d_av=30, d_model=768)
         #self.router = SparseTokenRouter(config, len(self.experts), top_k)
-        self.router = SparseMMTokenRouter(config, n_experts=len(self.experts), top_k=top_k, d_av=30)
+        #self.router = SparseMMTokenRouter(config, n_experts=len(self.experts), top_k=top_k, d_av=30)
 
         if "gpt" in self.lm_flavor:
             self.kdim = config.get("kv_dim", config.n_embd)
@@ -1547,7 +1547,7 @@ class MoeMMBlock(nn.Module):
         return x_f_updated
 
 
-    def old_faster_forward(self, x_q, z_a, z_v, z_av, x_prev=None, x_kv=None):
+    def forward(self, x_q, z_a, z_v, z_av, x_prev=None, x_kv=None):
         x_q = x_q[0]                              # [B, T, D]
         B, T, D = x_q.shape
         norm_x_q = self.ln_1(x_q)
@@ -1602,7 +1602,7 @@ class MoeMMBlock(nn.Module):
 
         return (x_f_updated,)
     
-    def forward(self, x_q, z_a, z_v, z_av, x_prev=None, x_kv=None):
+    def token_level_forward(self, x_q, z_a, z_v, z_av, x_prev=None, x_kv=None):
         # x_q: tuple -> [B, T_f, D]
         x_q = x_q[0]
         B, T_f, D = x_q.shape

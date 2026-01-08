@@ -142,8 +142,8 @@ def MM_hf_Dataset(args, mode='train'):
         if "chinese" in args["lm"]:
             print(f"Using Chinese LM")
             chinese_lm = True
-            enc = BertTokenizer.from_pretrained(CH_GPT2_PATHS[args["lm"]])
-            #enc = BertTokenizer.from_pretrained(args["lm"])
+            #enc = BertTokenizer.from_pretrained(CH_GPT2_PATHS[args["lm"]])
+            enc = BertTokenizer.from_pretrained(args["lm"])
         else:
             chinese_lm = False
             enc = tiktoken.get_encoding("gpt2")
