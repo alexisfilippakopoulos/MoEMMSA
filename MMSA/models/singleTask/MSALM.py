@@ -1437,6 +1437,13 @@ class MoeMMBlock(nn.Module):
             self.av_expert
         ])
 
+        self.expert_mlps = nn.ModuleList([])
+        for _ in range(len(self.experts)):
+            if "gpt" in self.lm_flavor:
+                self.expert_mlps.append(MLP(config))
+            else:
+                self.expert_mlps.append(_LlamaMLP_LoRA(config))
+            
         #self.router = SparseRouter(config, n_experts=len(self.experts), top_k=top_k, idx=layer_idx)
         self.router = MMSparseRouter(n_experts=len(self.experts), top_k=top_k, d_av=30, d_model=768)
         #self.router = SparseTokenRouter(config, len(self.experts), top_k)
@@ -1447,23 +1454,20 @@ class MoeMMBlock(nn.Module):
             self.ln_1 = LayerNorm(config.n_embd, config.bias)
             self.ln_2 = LayerNorm(config.n_embd, config.bias)
             #self.ln_sa = LayerNorm(config.n_embd, config.bias)
-            if config.use_lora:
-                self.mlp = LoRA_MLP(config)
-            else:
-                self.mlp = MLP(config)
+            #if config.use_lora:
+                #self.mlp = LoRA_MLP(config)
+            #else:
+                #self.mlp = MLP(config)
         else: 
             self.ln_1 = _LlamaRMSNorm(config.n_embd)
             self.ln_2 = _LlamaRMSNorm(config.n_embd)
             self.kdim = config.get("kv_dim", config.n_embd)
             self.mlp = _LlamaMLP_LoRA(config) # adopt this to initialize at the same
 
-        print(f"Ongoing with ----- {config.gating} ----- gating")
         self.gate_1 = nn.Sigmoid()
         self.gate_2 = nn.Sigmoid()
 
         init_value = config.get("init_gate", 0)
-        print(f"idx is {layer_idx}")
-        print(f"{init_value}")
         if config.get("init_gate_2", None):
             init_value_2 = config.get("init_gate_2")
         else:
@@ -1497,55 +1501,6 @@ class MoeMMBlock(nn.Module):
     def get_expert_usage_stats(self):
         return self.expert_usage_stats.copy()
 
-    def old_slow_forward(self, x_q, z_a, z_v, z_av, x_prev=None, x_kv=None):
-        #import pdb; pdb.set_trace()
-        x_q = x_q[0]
-        B, _, D = x_q.size()
-        norm_x_q = self.ln_1(x_q)
-
-        #top_k_weights, top_k_indices, all_weights = self.router(norm_x_q)
-        top_k_weights, top_k_indices, all_weights = self.router(norm_x_q, z_a, z_v, z_av)
-
-        delta_x_f = torch.zeros_like(x_q)
-
-        context_map = {
-            0: z_a,   # Audio expert
-            1: z_v,   # Visual expert
-            2: z_av,  # AV expert
-        }
-
-        for b in range(B):
-            for k in range(self.top_k):
-                expert_idx = top_k_indices[b, k].item()
-                self.expert_usage_stats[expert_idx] += 1
-                weight = top_k_weights[b, k]
-                
-                # Get expert and corresponding context
-                expert = self.experts[expert_idx]
-                context = context_map[expert_idx]
-
-                expert_output = expert(x_q[b:b+1], context[b:b+1])
-
-                delta_x_f[b:b+1] += weight * expert_output
-    
-        x_f_updated = x_q + self.gate_1(self.alpha_1) * delta_x_f
-
-        if self.combine:
-            # torch.Size([32, 59, 768])
-            x_comb = torch.cat((x_prev, x_f_updated), dim=1)
-            # PAPER: gated cross-attention version (torch.Size([32, 59, 768]))
-            x_f_updated = x_comb + self.gate_2(self.alpha_2) * self.mlp(self.ln_2(x_comb))
-            #x_f_updated = x_f_updated + self.gate_sa(self.alpha_sa) * self.self_attn(self.ln_sa(x_f_updated))
-            # ablation: no-gate version
-            # x = x_comb + self.mlp(self.ln_2(x_comb))
-            # x = x_comb + self.mlp(self.ln_2(x_comb))
-        else:
-            # vanilla cross-attention implementation
-            x_f_updated = x_f_updated + self.gate_2(self.alpha_2) * self.mlp(self.ln_2(x_f_updated))
-        # x = (x, cache)
-        x_f_updated = (x_f_updated,)
-        return x_f_updated
-
 
     def forward(self, x_q, z_a, z_v, z_av, x_prev=None, x_kv=None):
         x_q = x_q[0]                              # [B, T, D]
@@ -1563,9 +1518,9 @@ class MoeMMBlock(nn.Module):
         contexts = [z_a, z_v, z_av]
 
     # ---- MoE dispatch (vectorized) ----
-        for expert_idx, expert in enumerate(self.experts):
+        for exp_idx, (exp_ca, exp_ffw) in enumerate(self.experts):
         # mask: which (b,k) route to this expert
-            mask = (top_k_indices == expert_idx)  # [B, K]
+            mask = (top_k_indices == exp_idx)  # [B, K]
 
             if not mask.any():
                 continue
@@ -1574,21 +1529,24 @@ class MoeMMBlock(nn.Module):
             b_idx, k_idx = mask.nonzero(as_tuple=True)
 
         # gather inputs
-            x_in = x_q[b_idx]                     # [N, T, D]
-            ctx  = contexts[expert_idx][b_idx]   # [N, T, D]
+            x_in = norm_x_q[b_idx]                     # [N, T, D]
+            ctx  = contexts[exp_idx][b_idx]   # [N, T, D]
 
         # expert forward (batched)
-            out = expert(x_in, ctx)               # [N, T, D]
+            attn_out = exp_ca(x_in, ctx)               # [N, T, D]
+            ffw_out = exp_ffw(attn_out)               # [N, T, D]
 
+            expert_update = (self.gate_1(self.alpha_1) * attn_out) + \
+                            (self.gate_2(self.alpha_2) * ffw_out)
         # apply weights
             w = top_k_weights[b_idx, k_idx].view(-1, 1, 1)
-            out = out * w
+            out = expert_update * w
 
         # scatter-add back to batch dimension
             delta_x_f.index_add_(0, b_idx, out)
 
         # exact stats match
-            self.expert_usage_stats[expert_idx] += b_idx.numel()
+            self.expert_usage_stats[exp_idx] += b_idx.numel()
 
     # ---- rest unchanged ----
         delta_x_f = self.delta_dropout(delta_x_f)
@@ -1596,7 +1554,8 @@ class MoeMMBlock(nn.Module):
 
         if self.combine:
             x_comb = torch.cat((x_prev, x_f_updated), dim=1)
-            x_f_updated = x_comb + self.gate_2(self.alpha_2) * self.mlp(self.ln_2(x_comb))
+            #x_f_updated = x_comb + self.gate_2(self.alpha_2) * self.mlp(self.ln_2(x_comb))
+            x_f_updated = x_comb
         else:
             x_f_updated = x_f_updated + self.gate_2(self.alpha_2) * self.mlp(self.ln_2(x_f_updated))
 
