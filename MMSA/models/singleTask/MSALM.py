@@ -453,10 +453,16 @@ class msaLMLayer(nn.Module):
                 print(f"Initializing {len(self.ca_layer.expert_mlps)} Expert MLPs from Decoder...")
                 for expert_mlp in self.ca_layer.expert_mlps:
                     self._copy_weights(expert_mlp, self.decoder_layer.mlp)
-            # Fallback for standard single-MLP blocks
-            elif hasattr(self.ca_layer, 'mlp'):
-                print("Initializing Single MM MLP from Decoder...")
-                self._copy_weights(self.ca_layer.mlp, self.decoder_layer.mlp)
+                
+                # ALSO initialize the shared self.mlp inside the MoeMMBlock
+                if hasattr(self.ca_layer, 'mlp'):
+                    print("Initializing Shared MM MLP from Decoder...")
+                    self._copy_weights(self.ca_layer.mlp, self.decoder_layer.mlp)
+                
+        # Fallback for standard single-MLP blocks (original DeepMLF structure)
+        elif hasattr(self.ca_layer, 'mlp'):
+            print("Initializing Single MM MLP from Decoder...")
+            self._copy_weights(self.ca_layer.mlp, self.decoder_layer.mlp)
 
     def _copy_weights(self, target_mlp, source_mlp):
         """Helper to handle weight copying based on LM flavor"""
@@ -1480,10 +1486,10 @@ class MoeMMBlock(nn.Module):
             self.ln_1 = LayerNorm(config.n_embd, config.bias)
             self.ln_2 = LayerNorm(config.n_embd, config.bias)
             #self.ln_sa = LayerNorm(config.n_embd, config.bias)
-            #if config.use_lora:
-                #self.mlp = LoRA_MLP(config)
-            #else:
-                #self.mlp = MLP(config)
+            if config.use_lora:
+                self.mlp = LoRA_MLP(config)
+            else:
+                self.mlp = MLP(config)
         else: 
             self.ln_1 = _LlamaRMSNorm(config.n_embd)
             self.ln_2 = _LlamaRMSNorm(config.n_embd)
@@ -1492,6 +1498,7 @@ class MoeMMBlock(nn.Module):
 
         self.gate_1 = nn.Sigmoid()
         self.gate_2 = nn.Sigmoid()
+        self.gate_3 = nn.Sigmoid()
 
         init_value = config.get("init_gate", 0)
         if config.get("init_gate_2", None):
@@ -1501,9 +1508,11 @@ class MoeMMBlock(nn.Module):
         if self.idx == -1:
             self.alpha_1 = nn.Parameter(init_value * torch.ones(1))
             self.alpha_2 = nn.Parameter(init_value_2 * torch.ones(1))
+            self.alpha_3 = nn.Parameter(init_value_2 * torch.ones(1))
         else:
             self.alpha_1 = nn.Parameter(init_value[layer_idx] * torch.ones(1))
             self.alpha_2 = nn.Parameter(init_value_2[layer_idx] * torch.ones(1))
+            self.alpha_3 = nn.Parameter(init_value_2[layer_idx] * torch.ones(1))
 
         # combined cross-attention
         self.combine = config.get("combine", False)
@@ -1560,7 +1569,7 @@ class MoeMMBlock(nn.Module):
 
         # expert forward (batched)
             attn_out = exp_ca(x_in, ctx)               # [N, T, D]
-            ffw_out = exp_ffw(self.ln_2(attn_out))               # [N, T, D]
+            ffw_out = exp_ffw(attn_out)               # [N, T, D]
 
             expert_update = (self.gate_1(self.alpha_1) * attn_out) + \
                             (self.gate_2(self.alpha_2) * ffw_out)
@@ -1581,7 +1590,7 @@ class MoeMMBlock(nn.Module):
         if self.combine:
             x_comb = torch.cat((x_prev, x_f_updated), dim=1)
             #x_f_updated = x_comb + self.gate_2(self.alpha_2) * self.mlp(self.ln_2(x_comb))
-            x_f_updated = x_comb
+            x_f_updated = x_comb + self.gate_3(self.alpha_3) * self.mlp(self.ln_2(x_comb))
         else:
             x_f_updated = x_f_updated + self.gate_2(self.alpha_2) * self.mlp(self.ln_2(x_f_updated))
 
