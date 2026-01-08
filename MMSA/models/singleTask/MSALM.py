@@ -1518,7 +1518,7 @@ class MoeMMBlock(nn.Module):
         contexts = [z_a, z_v, z_av]
 
     # ---- MoE dispatch (vectorized) ----
-        for exp_idx, (exp_ca, exp_ffw) in enumerate(self.experts):
+        for exp_idx, (exp_ca, exp_ffw) in enumerate(zip(self.experts, self.expert_mlps)):
         # mask: which (b,k) route to this expert
             mask = (top_k_indices == exp_idx)  # [B, K]
 
