@@ -1552,11 +1552,11 @@ class MoeMMBlock(nn.Module):
         B, T, D = x_q.shape
         norm_x_q = self.ln_1(x_q)
 
-        #top_k_weights, top_k_indices, _ = self.router(
-        #    norm_x_q, z_a, z_v, z_av
-        #)                                         # [B, K]
+        top_k_weights, top_k_indices, _ = self.router(
+            norm_x_q, z_a, z_v, z_av
+        )                                         # [B, K]
         
-        top_k_weights, top_k_indices, _ = self.router(norm_x_q)
+        #top_k_weights, top_k_indices, _ = self.router(norm_x_q)
 
         delta_x_f = torch.zeros_like(x_q)
 
