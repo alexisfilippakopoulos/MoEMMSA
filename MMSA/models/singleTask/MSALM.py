@@ -449,10 +449,10 @@ class msaLMLayer(nn.Module):
     def tie_ffw(self):
         if self.ca_layer is not None:
             # Check if we are dealing with our new MoeMMBlock
-            if hasattr(self.ca_layer, 'expert_mlps'):
-                print(f"Initializing {len(self.ca_layer.expert_mlps)} Expert MLPs from Decoder...")
-                for expert_mlp in self.ca_layer.expert_mlps:
-                    self._copy_weights(expert_mlp, self.decoder_layer.mlp)
+            #if hasattr(self.ca_layer, 'expert_mlps'):
+            #    print(f"Initializing {len(self.ca_layer.expert_mlps)} Expert MLPs from Decoder...")
+            #    for expert_mlp in self.ca_layer.expert_mlps:
+            #        self._copy_weights(expert_mlp, self.decoder_layer.mlp)
                 
                 # ALSO initialize the shared self.mlp inside the MoeMMBlock
                 if hasattr(self.ca_layer, 'mlp'):
@@ -1448,6 +1448,21 @@ class MMSparseRouter(nn.Module):
 
         return top_k_weights, top_k_indices, all_weights 
 
+class exp_MLP(nn.Module):
+    def __init__(self, config):
+        super().__init__()
+        self.c_fc    = nn.Linear(config.n_embd, config.n_embd / 4, bias=config.bias)
+        self.gelu    = nn.GELU()
+        self.c_proj  = nn.Linear(config.n_embd / 4, config.n_embd, bias=config.bias)
+        self.dropout = nn.Dropout(config.dropout)
+
+    def forward(self, x):
+        x = self.c_fc(x)
+        x = self.gelu(x)
+        x = self.c_proj(x)
+        x = self.dropout(x)
+        return x
+
 class MoeMMBlock(nn.Module):
     """
     Mixture-of-Experts Multimodal Block with Cross-Attention
@@ -1472,7 +1487,7 @@ class MoeMMBlock(nn.Module):
         self.expert_mlps = nn.ModuleList([])
         for _ in range(len(self.experts)):
             if "gpt" in self.lm_flavor:
-                self.expert_mlps.append(MLP(config))
+                self.expert_mlps.append(exp_MLP(config))
             else:
                 self.expert_mlps.append(_LlamaMLP_LoRA(config))
             
@@ -1588,9 +1603,11 @@ class MoeMMBlock(nn.Module):
         x_f_updated = x_q + self.gate_1(self.alpha_1) * delta_x_f
 
         if self.combine:
+            x_prev = self.mlp(self.ln_2(x_prev))
             x_comb = torch.cat((x_prev, x_f_updated), dim=1)
             #x_f_updated = x_comb + self.gate_2(self.alpha_2) * self.mlp(self.ln_2(x_comb))
-            x_f_updated = x_comb + self.gate_3(self.alpha_3) * self.mlp(self.ln_2(x_comb))
+            #x_f_updated = x_comb + self.gate_3(self.alpha_3) * self.mlp(self.ln_2(x_comb))
+            x_f_updated = x_comb
         else:
             x_f_updated = x_f_updated + self.gate_2(self.alpha_2) * self.mlp(self.ln_2(x_f_updated))
 
