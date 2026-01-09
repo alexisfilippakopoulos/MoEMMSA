@@ -1603,11 +1603,11 @@ class MoeMMBlock(nn.Module):
         x_f_updated = x_q + delta_x_f
 
         if self.combine:
-            x_prev = self.mlp(self.ln_2(x_prev))
+            #x_prev = self.mlp(self.ln_2(x_prev))
             x_comb = torch.cat((x_prev, x_f_updated), dim=1)
             #x_f_updated = x_comb + self.gate_2(self.alpha_2) * self.mlp(self.ln_2(x_comb))
-            #x_f_updated = x_comb + self.gate_3(self.alpha_3) * self.mlp(self.ln_2(x_comb))
-            x_f_updated = x_comb
+            x_f_updated = x_comb + self.gate_3(self.alpha_3) * self.mlp(self.ln_2(x_comb))
+            #x_f_updated = x_comb
         else:
             x_f_updated = x_f_updated + self.gate_2(self.alpha_2) * self.mlp(self.ln_2(x_f_updated))
 
