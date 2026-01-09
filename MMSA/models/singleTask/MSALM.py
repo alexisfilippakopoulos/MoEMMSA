@@ -1600,7 +1600,7 @@ class MoeMMBlock(nn.Module):
 
     # ---- rest unchanged ----
         delta_x_f = self.delta_dropout(delta_x_f)
-        x_f_updated = x_q + self.gate_1(self.alpha_1) * delta_x_f
+        x_f_updated = x_q + delta_x_f
 
         if self.combine:
             x_prev = self.mlp(self.ln_2(x_prev))
