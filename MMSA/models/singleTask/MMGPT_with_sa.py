@@ -187,6 +187,64 @@ class MultiheadCrossAttention(nn.Module):
         attn_output = self.scaled_dot_product_attention(x_q, x_k, x_v, mask)
         output = self.resid_dropout(self.W_o(self.combine_heads(attn_output)))
         return output
+    
+class MultiheadGatedCrossAttention(nn.Module):
+    ''' Multi-Head Cross Attention module '''
+
+    def __init__(self, n_head, d_model, d_k, p_drop=0.1):
+        super().__init__()
+
+        self.n_head = n_head
+        self.d_model = d_model # q-dim=d_model
+        self.d_k = d_k # k,v dim != d_model
+
+        # Q: d_model --> d_model
+        self.W_q = nn.Linear(d_model, d_model, bias=False)
+        # K,V: d_k --> d_model
+        self.W_kv = nn.Linear(d_k, 2*d_model, bias=False)
+        # self.W_v = nn.Linear(d_k, d_model, bias=False)
+        # projection
+        self.W_o = nn.Linear(d_model, d_model, bias=False)
+
+        self.gate_linear = nn.Linear(d_model, d_model, bias=False)
+        self.gate_act = nn.Sigmoid()
+        #self.attn_dropout = nn.Dropout(p_drop)
+        #self.resid_dropout = nn.Dropout(p_drop)
+        self.attn_dropout = nn.Identity()
+        self.resid_dropout = nn.Identity()
+
+    def scaled_dot_product_attention(self, q, k, v, mask=None):
+        attn_scores = \
+            torch.matmul(q, k.transpose(-2, -1)) / math.sqrt(self.d_model)
+        if mask is not None:
+            attn_scores = attn_scores.masked_fill(mask == 0, -1e9)
+        attn_probs = torch.softmax(attn_scores, dim=-1)
+        attn_probs = self.attn_dropout(attn_probs)
+        # (B, nh, T, T) x (B, nh, T, hs) -> (B, nh, T, hs)
+        output = torch.matmul(attn_probs, v)
+        return output
+
+    def split_heads(self, x):
+        batch_size, seq_length, d_model = x.size()
+        # (B, nh, L, hs)
+        return x.view(batch_size, seq_length, self.n_head, self.d_model // self.n_head).transpose(1, 2)
+
+    def combine_heads(self, x):
+        batch_size, _, seq_length, _ = x.size()
+        return x.transpose(1, 2).contiguous().view(batch_size, seq_length, self.d_model)
+
+    def forward(self, x_q, context, mask=None):
+        gate_input = x_q
+        q = self.split_heads(self.W_q(x_q))
+        k, v = self.W_kv(context).split(self.d_model, dim=2)
+        k = self.split_heads(k)
+        v = self.split_heads(v)
+        attn_output_split = self.scaled_dot_product_attention(q, k, v, mask)
+        attn_output = self.combine_heads(attn_output_split)
+        gate = self.gate_act(self.gate_linear(gate_input))
+        gated_output = attn_output * gate
+        output = self.W_o(gated_output)
+        return output
 
 class MultiheadSelfAttention(nn.Module):
     ''' Multi-Head Self Attention module '''

@@ -8,7 +8,7 @@ from typing import Optional
 import torch.distributions as D
 from transformers import AutoTokenizer, AutoModelForCausalLM, AutoConfig
 from MMSA.models.singleTask.MMGPT_with_sa import (AV_Enc,
-                                          MultiheadCrossAttention, MultiheadSelfAttention,
+                                          MultiheadCrossAttention, MultiheadGatedCrossAttention,
                                           LoRA_MLP, LayerNorm, MLP)
 
 ###################################################################################################
@@ -1207,7 +1207,7 @@ class FusionExpert(nn.Module):
         self.expert_type = expert_type
         self.idx = idx
         self.kdim = config.get("kv_dim", config.n_embd)
-        self.attn = MultiheadCrossAttention(
+        self.attn = MultiheadGatedCrossAttention(
             config.n_head,
             config.n_embd,  # query dimension
             self.kdim,      # key/value dimension
