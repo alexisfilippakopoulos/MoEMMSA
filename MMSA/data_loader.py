@@ -370,7 +370,7 @@ def MM_hf_Dataset(args, mode='train'):
                 )
             # import pdb; pdb.set_trace()
             #data.save_to_disk(f"/data/efthygeo/mmsa/{args['dataset_name']}/Processed/mms2s/hf_unaligned_50_{mode}.arrow")
-            data.save_to_disk(f"/leonardo_work/EUHPC_A04_051/alexfil/MSA-Datasets/CH-SIMS/mmsa/{args['dataset_name']}/Processed/mms2s/hf_unaligned_50_{mode}.arrow")
+            data.save_to_disk(f"/leonardo_scratch/large/userexternal/afilippa/CH-SIMS/mmsa/{args['dataset_name']}/Processed/mms2s/hf_unaligned_50_{mode}.arrow")
             # data.save_to_disk(f"/data/efthygeo/mmsa/{args['dataset_name']}/Processed/mms2s/hf_unaligned_39_{mode}.arrow")
 
         return args, data
@@ -729,7 +729,7 @@ def MM_hf_Dataset(args, mode='train'):
                     # data.save_to_disk(f"/data/efthygeo/mmsa/{args['dataset_name']}/Processed/mms2s_e2v_long_half/hf_unaligned_50_{mode}_s_{split_id}.arrow")
                     # data.save_to_disk(f"/data/efthygeo/mmsa/{args['dataset_name']}/Processed/mms2s_hbrt_short/hf_unaligned_50_{mode}_s_{split_id}.arrow")
                     #data.save_to_disk(f"/data/efthygeo/mmsa/{args['dataset_name']}/Processed/mms2s_e2v_short/hf_unaligned_50_{mode}_s_{split_id}.arrow")
-                    data.save_to_disk(f"/leonardo_work/EUHPC_A04_051/alexfil/MSA-Datasets/CH-SIMS/mmsa/{args['dataset_name']}/Processed/mms2s_e2v_short/hf_unaligned_50_{mode}_s_{split_id}.arrow")
+                    data.save_to_disk(f"/leonardo_scratch/large/userexternal/afilippa/CH-SIMS/mmsa/{args['dataset_name']}/Processed/mms2s_e2v_short/hf_unaligned_50_{mode}_s_{split_id}.arrow")
                     # data.save_to_disk(f"/data/efthygeo/mmsa/{args['dataset_name']}/Processed/mms2s_hbrt/hf_unaligned_50_{mode}_s_{split_id}.arrow")
                     # data.save_to_disk(f"/data/efthygeo/mmsa/{args['dataset_name']}/Processed/mms2s_e2v_long_half/hf_unaligned_50_{mode}_s_{split_id}.arrow")
                     # data.save_to_disk(f"/data/efthygeo/mmsa/{args['dataset_name']}/Processed/mms2s_hbrt_long_half/hf_unaligned_50_{mode}_s_{split_id}.arrow")
@@ -916,7 +916,7 @@ def MM_hf_Dataset(args, mode='train'):
                 
                 # data.save_to_disk(f"/data/efthygeo/mmsa/{args['dataset_name']}/Processed/mms2s_hbrt/hf_unaligned_50_{mode}_s_0")
                 # data.save_to_disk(f"/data/efthygeo/mmsa/{args['dataset_name']}/Processed/mms2s_e2v/hf_unaligned_50_{mode}_s_0")
-                data.save_to_disk(f"/leonardo_work/EUHPC_A04_051/alexfil/MSA-Datasets/CH-SIMS/mmsa/{args['dataset_name']}/Processed/mms2s_e2v/hf_unaligned_50_{mode}_s_0")
+                data.save_to_disk(f"/leonardo_scratch/large/userexternal/afilippa/CH-SIMS/mmsa/{args['dataset_name']}/Processed/mms2s_e2v/hf_unaligned_50_{mode}_s_0")
                 # data.save_to_disk(f"/data/efthygeo/mmsa/{args['dataset_name']}/Processed/mms2s_hbrt_long/hf_unaligned_50_{mode}_s_0")
                 # data.save_to_disk(f"/data/efthygeo/mmsa/{args['dataset_name']}/Processed/mms2s_hbrt/hf_unaligned_50_{mode}.arrow")
                 # data.save_to_disk(f"/data/efthygeo/mmsa/{args['dataset_name']}/Processed/mms2s_hbrt_long/hf_unaligned_50_{mode}.arrow")

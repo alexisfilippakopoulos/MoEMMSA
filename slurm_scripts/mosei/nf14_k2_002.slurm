@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=thesis-mosei-k2-0002
+#SBATCH --job-name=mosei-nf14-k2-0002
 #SBATCH --nodes=1
 #SBATCH --partition=boost_usr_prod
 #SBATCH --account=EUHPC_A04_051
@@ -24,7 +24,7 @@ module load gcc/11.3.0
 # --- Conda environment ---
 source ~/miniconda3/bin/activate
 conda activate deepmlf-cu12
-cd /leonardo_work/EUHPC_A04_051/alexfil/MoEMMSA
+cd /leonardo_scratch/large/userexternal/afilippa/MoEMMSA
 
 export TIKTOKEN_CACHE_DIR=/leonardo_work/EUHPC_A04_051/alexfil/tiktoken_cache
 export TRANSFORMERS_OFFLINE=1
@@ -35,7 +35,7 @@ python experiments/regression/mult_base.py \
   -m msalm \
   -d mosei \
   -g 0 \
-  --exp-name thesis-mosei \
+  --exp-name thesis-mosei-nf14-l2-02 \
   -c MMSA/config/regression/deepmlf/mosei/large_nf14_k2_0002.json  \
   --res-save-dir MMSA/results/mosei/nf14_k2_0002 \
   -n 2 \

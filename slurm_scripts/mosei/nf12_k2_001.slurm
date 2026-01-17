@@ -24,7 +24,7 @@ module load gcc/11.3.0
 # --- Conda environment ---
 source ~/miniconda3/bin/activate
 conda activate deepmlf-cu12
-cd /leonardo_work/EUHPC_A04_051/alexfil/MoEMMSA
+cd /leonardo_scratch/large/userexternal/afilippa/MoEMMSA
 
 export TIKTOKEN_CACHE_DIR=/leonardo_work/EUHPC_A04_051/alexfil/tiktoken_cache
 export TRANSFORMERS_OFFLINE=1
@@ -35,7 +35,7 @@ python experiments/regression/mult_base.py \
   -m msalm \
   -d mosei \
   -g 0 \
-  --exp-name thesis-mosei \
+  --exp-name thesis-mosei-nf12-k2-01 \
   -c MMSA/config/regression/deepmlf/mosei/large_best_k2_0001.json  \
   --res-save-dir MMSA/results/mosei/nf12_k2_0001 \
   -n 2 \

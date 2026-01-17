@@ -24,15 +24,15 @@ module load gcc/11.3.0
 # --- Conda environment ---
 source ~/miniconda3/bin/activate
 conda activate deepmlf-cu12
-cd /leonardo_work/EUHPC_A04_051/alexfil/MoEMMSA
+cd /leonardo_scratch/large/userexternal/afilippa/MoEMMSA
 
 # --- Run Python experiment ---
 python experiments/regression/mult_base.py \
   -m msalm \
   -d sims \
   -g 0 \
-  --exp-name lr_0001__k_3__nf_16-v2 \
+  --exp-name lr_0001__k_3__nf_16-gca-delta-update \
   -c MMSA/config/regression/deepmlf/sims/lr-0001/k_3/ours_16tokens.json \
-  --res-save-dir MMSA/results/sims/lrs_0001/sparse-mm-token-lvl-router/k_3/nf_16-v2-test \
+  --res-save-dir MMSA/results/sims/lrs_0001/sparse-mm-token-lvl-router/k_3/nf_16-gca-delta-update \
   -n 2 \
   -s 1990 -s 1991 -s 1992 -s 1993 -s 1994

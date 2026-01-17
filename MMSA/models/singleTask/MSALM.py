@@ -8,7 +8,7 @@ from typing import Optional
 import torch.distributions as D
 from transformers import AutoTokenizer, AutoModelForCausalLM, AutoConfig
 from MMSA.models.singleTask.MMGPT_with_sa import (AV_Enc,
-                                          MultiheadCrossAttention, MultiheadSelfAttention,
+                                          MultiheadCrossAttention, MultiheadGatedCrossAttention,
                                           LoRA_MLP, LayerNorm, MLP)
 
 ###################################################################################################
@@ -1207,7 +1207,7 @@ class FusionExpert(nn.Module):
         self.expert_type = expert_type
         self.idx = idx
         self.kdim = config.get("kv_dim", config.n_embd)
-        self.attn = MultiheadCrossAttention(
+        self.attn = MultiheadGatedCrossAttention(
             config.n_head,
             config.n_embd,  # query dimension
             self.kdim,      # key/value dimension
@@ -1276,7 +1276,7 @@ class SparseMMTokenRouter(nn.Module):
         #self.router_weights = nn.Linear(self.d_total, 2 * self.d_total)
         #self.router_weightsv2 = nn.Linear(2 * self.d_total, n_experts)
         #self.skip_router = nn.Linear(self.d_total, n_experts)
-        #nn.init.zeros_(self.router_weightsv2.bias)
+        #nn.init.zeros_(self.router_weights.bias)
 
     def forward(self, x_f, z_a, z_v, z_av):
         """
@@ -1325,6 +1325,69 @@ class SparseMMTokenRouter(nn.Module):
         # top_k_weights: [B, T_f, k]
         # top_k_indices: [B, T_f, k]
         # all_weights:   [B, T_f, n_experts] (useful for load balancing loss)
+        return top_k_weights, top_k_indices, all_weights
+
+class SparseMMTokenRouterExt(nn.Module):
+    def __init__(self, config, n_experts, top_k, d_av):
+        super().__init__()
+        self.n_experts = n_experts
+        self.top_k = top_k
+        
+        self.d_fusion = config.n_embd      # e.g., 768
+        self.d_av = d_av                   # e.g., 30
+
+        # +3 for disagreement scalars
+        self.d_total = self.d_fusion + 3 * self.d_av + 3
+        
+        self.router_weights = nn.Linear(self.d_total, n_experts)
+
+    def forward(self, x_f, z_a, z_v, z_av):
+        """
+        x_f  : [B, T_f, D]
+        z_a  : [B, T_a, d_av]
+        z_v  : [B, T_v, d_av]
+        z_av : [B, T_av, d_av]
+        """
+        B, T_f, _ = x_f.shape
+
+        # ---- 1. Pool modalities ----
+        z_a_pool  = z_a.mean(dim=1)    # [B, d_av]
+        z_v_pool  = z_v.mean(dim=1)    # [B, d_av]
+        z_av_pool = z_av.mean(dim=1)   # [B, d_av]
+
+        # ---- 2. Disagreement signals (NEW) ----
+        # L2 distances between pooled modality summaries
+        d_av   = torch.norm(z_a_pool - z_v_pool, dim=-1, keepdim=True)    # [B, 1]
+        d_aav  = torch.norm(z_a_pool - z_av_pool, dim=-1, keepdim=True)   # [B, 1]
+        d_vav  = torch.norm(z_v_pool - z_av_pool, dim=-1, keepdim=True)   # [B, 1]
+
+        # ---- 3. Context summary with disagreement ----
+        # [B, 3*d_av + 3]
+        context_summary = torch.cat(
+        [z_a_pool, z_v_pool, z_av_pool, d_av, d_aav, d_vav],
+        dim=-1
+        )
+
+        # ---- 4. Broadcast context to tokens ----
+        context_expanded = context_summary.unsqueeze(1).expand(-1, T_f, -1)
+
+        # ---- 5. Router input ----
+        router_input = torch.cat([x_f, context_expanded], dim=-1)
+
+        # ---- 6. Token-level routing ----
+        logits = self.router_weights(router_input)
+
+        all_weights = F.softmax(logits, dim=-1)
+
+        # ---- 7. Top-k selection ----
+        top_k_weights, top_k_indices = torch.topk(
+        all_weights, self.top_k, dim=-1
+        )
+
+        top_k_weights = top_k_weights / (
+        top_k_weights.sum(dim=-1, keepdim=True) + 1e-10
+        )
+
         return top_k_weights, top_k_indices, all_weights
 
 class SparseTokenRouter(nn.Module):
@@ -1416,6 +1479,21 @@ class MMSparseRouter(nn.Module):
 
         return top_k_weights, top_k_indices, all_weights 
 
+class exp_MLP(nn.Module):
+    def __init__(self, config):
+        super().__init__()
+        self.c_fc    = nn.Linear(config.n_embd, config.n_embd // 4, bias=config.bias)
+        self.gelu    = nn.GELU()
+        self.c_proj  = nn.Linear(config.n_embd // 4, config.n_embd, bias=config.bias)
+        self.dropout = nn.Dropout(config.dropout)
+
+    def forward(self, x):
+        x = self.c_fc(x)
+        x = self.gelu(x)
+        x = self.c_proj(x)
+        x = self.dropout(x)
+        return x
+
 class MoeMMBlock(nn.Module):
     """
     Mixture-of-Experts Multimodal Block with Cross-Attention
@@ -1437,11 +1515,19 @@ class MoeMMBlock(nn.Module):
             self.av_expert
         ])
 
+        #self.expert_mlps = nn.ModuleList([])
+        #for _ in range(len(self.experts)):
+        #    if "gpt" in self.lm_flavor:
+        #        self.expert_mlps.append(exp_MLP(config))
+        #    else:
+        #        self.expert_mlps.append(_LlamaMLP_LoRA(config))
+
         #self.router = SparseRouter(config, n_experts=len(self.experts), top_k=top_k, idx=layer_idx)
         #self.router = MMSparseRouter(n_experts=len(self.experts), top_k=top_k, d_av=30, d_model=768)
         #self.router = SparseTokenRouter(config, len(self.experts), top_k)
         self.router = SparseMMTokenRouter(config, n_experts=len(self.experts), top_k=top_k, d_av=30)
-
+        #self.router = SparseMMTokenRouterExt(config, n_experts=len(self.experts), top_k=top_k, d_av=30)
+        
         if "gpt" in self.lm_flavor:
             self.kdim = config.get("kv_dim", config.n_embd)
             self.ln_1 = LayerNorm(config.n_embd, config.bias)
@@ -1547,16 +1633,16 @@ class MoeMMBlock(nn.Module):
         return x_f_updated
 
 
-    def old_faster_forward(self, x_q, z_a, z_v, z_av, x_prev=None, x_kv=None):
+    def batched_forward(self, x_q, z_a, z_v, z_av, x_prev=None, x_kv=None):
         x_q = x_q[0]                              # [B, T, D]
         B, T, D = x_q.shape
         norm_x_q = self.ln_1(x_q)
 
-        #top_k_weights, top_k_indices, _ = self.router(
-        #    norm_x_q, z_a, z_v, z_av
-        #)                                         # [B, K]
+        top_k_weights, top_k_indices, _ = self.router(
+            norm_x_q, z_a, z_v, z_av
+        )                                         # [B, K]
         
-        top_k_weights, top_k_indices, _ = self.router(norm_x_q)
+        #top_k_weights, top_k_indices, _ = self.router(norm_x_q)
 
         delta_x_f = torch.zeros_like(x_q)
 
@@ -1633,7 +1719,7 @@ class MoeMMBlock(nn.Module):
 
             # ---- gather queries ----
             # shape: [N, 1, D]
-            q_tokens = norm_x_q[b_idx, t_idx].unsqueeze(1)
+            q_tokens = x_q[b_idx, t_idx].unsqueeze(1)
 
             # ---- gather full modality context ----
             # shape: [N, T_ctx, D_ctx]
