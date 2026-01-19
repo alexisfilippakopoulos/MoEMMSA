@@ -372,9 +372,9 @@ class MSALM():
                     if left_epochs == self.args.update_epochs:
                         optimizer.zero_grad()
                     left_epochs -= 1
-                    vision_real = batch_data['vision'].to(self.args.device)
+                    vision = batch_data['vision'].to(self.args.device)
                     # vision noise ablation
-                    vision = torch.randn_like(vision_real).to(self.args.device)
+                    #vision = torch.randn_like(vision_real).to(self.args.device)
                     audio = batch_data['audio'].to(self.args.device)
                     
                     # idx-es for ulgm
@@ -851,9 +851,9 @@ class MSALM():
         with torch.no_grad():
             with tqdm(dataloader) as td:
                 for batch_idx, batch_data in enumerate(td):
-                    vision_real = batch_data['vision'].to(self.args.device)
+                    vision = batch_data['vision'].to(self.args.device)
                     # vision noise ablation
-                    vision = torch.randn_like(vision_real).to(self.args.device)
+                    #vision = torch.randn_like(vision_real).to(self.args.device)
                     audio = batch_data['audio'].to(self.args.device)
                     # language modality handling
                     raw_text = batch_data['raw_text']
