@@ -61,3 +61,8 @@ class AMIO(nn.Module):
             text_x, audio_x, video_x = self.alignNet(text_x, audio_x, video_x)
 
         return self.Model.vnl_forward(text_x, audio_x, video_x, *args, **kwargs)
+
+    def get_all_routing_weights(self):
+        if hasattr(self.Model, "_get_all_routing_weights"):
+            return self.Model._get_all_routing_weights()
+        return None

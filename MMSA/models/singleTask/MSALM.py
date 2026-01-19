@@ -1013,6 +1013,7 @@ class MSALM(nn.Module):
         
         # m3 - layer before classification
         self.p_m3 = config.get("p_m3", -1.0) 
+        self._collect_moe_blocks()
         
     def forward(
         self,
@@ -1147,6 +1148,45 @@ class MSALM(nn.Module):
 
             # return lm_logits, task_logits, av_logits, bn_logits, text_logits
     
+    def _collect_moe_blocks(self):
+        moe_blocks = []
+
+        for name, module in self.named_modules():
+            if name.endswith("ca_layer") and isinstance(module, MoeMMBlock):
+                moe_blocks.append((name, module))
+
+        # sort by transformer layer index
+        def extract_idx(name):
+            return int(name.split("transformer.h.")[1].split(".")[0])
+
+        moe_blocks.sort(key=lambda x: extract_idx(x[0]))
+
+        # keep only modules
+        self.moe_blocks = [m for _, m in moe_blocks]
+
+    def _get_all_routing_weights(self):
+        """
+        Collect routing weights from all MoE layers.
+        
+        Returns:
+            torch.Tensor: Shape [B, num_layers, num_fusion_tokens, num_experts]
+                          Experts: {0: Audio, 1: Visual, 2: AudioVisual}
+            None: If tracking is disabled or no weights captured
+        """
+        all_weights = []
+        for block in self.moe_blocks:
+            if hasattr(block, 'get_last_routing_weights'):
+                weights = block.get_last_routing_weights()
+                if weights is not None:
+                    all_weights.append(weights)
+        
+        if not all_weights:
+            return None
+        
+        # Stack along new layer dimension: [B, num_layers, T_f, num_experts]
+        stacked = torch.stack(all_weights, dim=1)
+        return stacked
+
     def _task_map(self, h_last):
         # uses the final norm layer of the encoder (frozen)
         # h_last = self.lang_encoder.norm(h_last)
@@ -1569,19 +1609,12 @@ class MoeMMBlock(nn.Module):
             #0.1)
         #self.alpha_sa = nn.Parameter(torch.zeros(1))
         #self.gate_sa = nn.Sigmoid()
-        self.reset_expert_usage_stats()
         self.delta_dropout = nn.Dropout(0.1)
+        self.track_routing = True
+        self.routing_weights = None
 
-    def reset_expert_usage_stats(self):
-        self.expert_usage_stats = {
-            'layer_idx': self.idx,
-            0: 0, # audio expert
-            1: 0, # visual expert
-            2: 0, # av expert
-        }
-
-    def get_expert_usage_stats(self):
-        return self.expert_usage_stats.copy()
+    def get_last_routing_weights(self):
+        return self.routing_weights
 
     def old_slow_forward(self, x_q, z_a, z_v, z_av, x_prev=None, x_kv=None):
         #import pdb; pdb.set_trace()
@@ -1696,8 +1729,11 @@ class MoeMMBlock(nn.Module):
         norm_x_q = self.ln_1(x_q)
 
         # ---- TOKEN-WISE ROUTING ----
-        top_k_weights, top_k_indices, _ = self.router(norm_x_q, z_a, z_v, z_av)
+        top_k_weights, top_k_indices, all_weights = self.router(norm_x_q, z_a, z_v, z_av)
         # shapes: [B, T_f, K]
+
+        if self.track_routing:
+            self.routing_weights = all_weights.detach().cpu()
 
         delta_x_f = torch.zeros_like(x_q)
 
@@ -1738,7 +1774,7 @@ class MoeMMBlock(nn.Module):
             flat_delta.index_add_(0, flat_idx, out)
 
             # stats
-            self.expert_usage_stats[expert_idx] += b_idx.numel()
+            #self.expert_usage_stats[expert_idx] += b_idx.numel()
 
         delta_x_f = flat_delta.view(B, T_f, D)
 
@@ -1755,3 +1791,4 @@ class MoeMMBlock(nn.Module):
             x_f_updated = x_f_updated + self.gate_2(self.alpha_2) * self.mlp(self.ln_2(x_f_updated))
 
         return (x_f_updated,)
+

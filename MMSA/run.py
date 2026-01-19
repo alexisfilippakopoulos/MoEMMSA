@@ -426,7 +426,10 @@ def _run(args, num_workers=1, is_tune=False, from_sena=False):
     # load data and models
     dataloader = MMDataLoader(args, num_workers)
     model = AMIO(args).to(args['device'])
-
+    print("DOKIMAZW TA LAYERS")
+    for name, module in model.named_modules():
+        if name.endswith("ca_layer"):
+            print(name, "->", type(module))
     ###############################################################################################
     ## for pkoro experiments
     # @efthygeo comment: REMOVE AFTER SFT experiments
@@ -449,11 +452,13 @@ def _run(args, num_workers=1, is_tune=False, from_sena=False):
     model.load_state_dict(torch.load(args['model_save_path']))
     model.to(args['device'])
     if from_sena:
+        print("EIMAI STO FROM_SENA sto RUN.py")
         final_results = {}
         final_results['train'] = trainer.do_test(model, dataloader['train'], mode="TRAIN", return_sample_results=True)
         final_results['valid'] = trainer.do_test(model, dataloader['valid'], mode="VALID", return_sample_results=True)
         final_results['test'] = trainer.do_test(model, dataloader['test'], mode="TEST", return_sample_results=True)
     elif is_tune:
+        print("EIMAI STO IS-TUNE sto RUN.py")
         # use valid set to tune hyper parameters
         # results = trainer.do_test(model, dataloader['valid'], mode="VALID")
         results = trainer.do_test(model, dataloader['test'], mode="TEST")
@@ -467,6 +472,7 @@ def _run(args, num_workers=1, is_tune=False, from_sena=False):
         if args.get("ssl", False):
             results = {}
         else:
+            print("EIMAI STO teleutaiooo sto RUN.py")
             results = trainer.do_test(model, dataloader['test'], mode="TEST")
 
     if args.get('del_model', False):

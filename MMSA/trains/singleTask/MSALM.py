@@ -372,7 +372,9 @@ class MSALM():
                     if left_epochs == self.args.update_epochs:
                         optimizer.zero_grad()
                     left_epochs -= 1
-                    vision = batch_data['vision'].to(self.args.device)
+                    vision_real = batch_data['vision'].to(self.args.device)
+                    # vision noise ablation
+                    vision = torch.randn_like(vision_real).to(self.args.device)
                     audio = batch_data['audio'].to(self.args.device)
                     
                     # idx-es for ulgm
@@ -848,8 +850,10 @@ class MSALM():
         ids = []
         with torch.no_grad():
             with tqdm(dataloader) as td:
-                for batch_data in td:
-                    vision = batch_data['vision'].to(self.args.device)
+                for batch_idx, batch_data in enumerate(td):
+                    vision_real = batch_data['vision'].to(self.args.device)
+                    # vision noise ablation
+                    vision = torch.randn_like(vision_real).to(self.args.device)
                     audio = batch_data['audio'].to(self.args.device)
                     # language modality handling
                     raw_text = batch_data['raw_text']
@@ -883,6 +887,7 @@ class MSALM():
 
                     
                     if self.use_ulgm:
+                        print("EIMAI STO ULGM")
                         # logit - loss - calculation
                         if self.use_bf16:
                             with torch.autocast(device_type='cuda', dtype=torch.bfloat16):
@@ -903,12 +908,34 @@ class MSALM():
                         )
                     elif self.modded_loss:
                         #with torch.autocast(device_type='cuda', dtype=torch.bfloat16):
+                        print("EIMAI STO modded_loss")
                         with torch.autocast(device_type='cuda', dtype=torch.float16):
                             outputs = model(text_ids, audio, vision, attention_mask=attention_mask)
                             task_logits = outputs['task_logits']
+                            if mode == "TEST":
+                                print("saving routing-labels")
+                                routing_stats = model.get_all_routing_weights()
+                                torch.save(
+                                    routing_stats,
+                                    (
+                                        f"/leonardo_scratch/large/userexternal/afilippa/MoEMMSA/"
+                                        f"interpretability_results/sims/nf16-k2-02-gca-vision-noise/routing_batch_{batch_idx}.pt"
+                                    )
+                                )
+                                torch.save(
+                                    labels.detach().cpu(),
+                                    (
+                                        f"/leonardo_scratch/large/userexternal/afilippa/MoEMMSA/"
+                                        f"interpretability_results/sims/nf16-k2-02-gca-vision-noise/labels_batch_{batch_idx}.pt"
+                                    )
+                                )
+
+                                #print(routing_stats.__class__, labels.__class__)
+                            #print(routing_stats)
                             # av_logits = outputs['av_logits']
                             # av_logits.squeeze_(1)                        
                     elif self.aux or self.args.get("av_distil", False):
+                        print("EIMAI STO self.aux kai av_distil false")
                         if self.use_bf16:
                             with torch.autocast(device_type='cuda', dtype=torch.bfloat16):
                                 lm_logits, task_logits, _, bn_logits = \
@@ -919,6 +946,7 @@ class MSALM():
                                         attention_mask=attention_mask
                                     )
                         else:
+                            print("eimai mesa sto else to self.aux kai distil false")
                             lm_logits, task_logits, _, _ = \
                                 model(
                                     text_ids,
@@ -927,6 +955,7 @@ class MSALM():
                                     attention_mask=attention_mask
                                 )
                     else:
+                        print("EIMAI STO KATW KATW ELSE")
                         lm_logits, task_logits = model(text_ids, audio, vision)
 
                     B, L = text_ids.shape
