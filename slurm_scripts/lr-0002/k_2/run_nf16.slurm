@@ -31,8 +31,8 @@ python experiments/regression/mult_base.py \
   -m msalm \
   -d sims \
   -g 0 \
-  --exp-name lr_0002__k_2__nf_16-gca-repr-test \
+  --exp-name lr_0002__k_2__nf_16-uni-losses \
   -c MMSA/config/regression/deepmlf/sims/lr-0002/k_2/ours_16tokens.json \
-  --res-save-dir MMSA/results/sims/lrs_0002/sparse-mm-token-lvl-router/k_2/nf_16-gca-repr-test \
+  --res-save-dir MMSA/results/sims/lrs_0002/sparse-mm-token-lvl-router/k_2/nf_16-uni-losses \
   -n 2 \
   -s 1990 -s 1991 -s 1992 -s 1993 -s 1994

@@ -175,6 +175,8 @@
                 "gamma": 1.0,
                 "l_bn": 1.0,
                 "l_av": 1.0,
+                "l_au": 1.0,
+                "l_vis": 1.0,
                 "l_t": 1.0,
                 "warmup_epochs": 1,
                 "max_epochs": 100,

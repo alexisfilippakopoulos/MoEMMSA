@@ -964,7 +964,7 @@ class MSALM(nn.Module):
         elif (self.n_bn_fusion > 0) and (self.modded_loss):
             self.d_task = config["mmgpt"].get("d_out", 64)
             self.W_task = nn.Sequential(
-                nn.Linear(2*config.mmgpt.d_mm + config["av_enc"]["d_enc_out"], self.d_task),
+                nn.Linear(2 * config.mmgpt.d_mm + 3 * config["av_enc"]["d_enc_out"], self.d_task),
                 nn.BatchNorm1d(self.d_task),
                 nn.ReLU(inplace=True),
                 nn.Linear(self.d_task, 1)
@@ -972,6 +972,8 @@ class MSALM(nn.Module):
             self.W_bn = nn.Linear(config.mmgpt.d_mm, 1)
             self.W_text = nn.Linear(config.mmgpt.d_mm, 1)
             self.W_av = nn.Linear(config["av_enc"]["d_enc_out"], 1)
+            self.W_au = nn.Linear(config["av_enc"]["d_enc_out"], 1)
+            self.W_vis = nn.Linear(config["av_enc"]["d_enc_out"], 1)
         else:
             self.W_task = nn.Linear(config.mmgpt.d_mm, 1)
         
@@ -1118,12 +1120,18 @@ class MSALM(nn.Module):
                 bn_tokens = last_hidden_states[:, self.max_token_len:, :]
                 bn_logits = self.W_bn(bn_tokens)
                 # av output
-                z_av = torch.mean(z_av, dim=1)
-                av_logits = self.W_av(z_av)
+                pooled_z_av = torch.mean(z_av, dim=1)
+                av_logits = self.W_av(pooled_z_av)
+                # audio output
+                pooled_z_a = torch.mean(z_a, dim=1)
+                au_logits = self.W_au(pooled_z_a)
+                # visual output
+                pooled_z_v = torch.mean(z_v, dim=1)
+                vis_logits = self.W_vis(pooled_z_v)
                 # global fusion output
                 avg_bn = torch.mean(bn_tokens, dim=1) # average over fusion tokens
                 task_logits = self._task_map(
-                    torch.cat((avg_bn, last_hidden_text, z_av), dim=1)
+                    torch.cat((avg_bn, last_hidden_text, pooled_z_av, pooled_z_a, pooled_z_v), dim=1)
                 )
             else:        
                 # _, l_t, _ = last_hidden_states.size()
@@ -1143,6 +1151,8 @@ class MSALM(nn.Module):
                 "av_logits": av_logits,
                 "bn_logits": bn_logits,
                 "lm_logits": lm_logits,
+                "au_logits": au_logits,
+                "vis_logits": vis_logits 
                 #"expert_usage_stats": expert_usage_stats
             } 
 
