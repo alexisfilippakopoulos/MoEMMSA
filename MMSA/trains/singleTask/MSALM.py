@@ -46,8 +46,6 @@ class MSALM():
             self.crit_text = nn.L1Loss(reduction='none')
             self.crit_bn = nn.L1Loss(reduction='none')
             self.crit_av = nn.L1Loss(reduction='none')
-            self.crit_au = nn.L1Loss(reduction='none')
-            self.crit_vis = nn.L1Loss(reduction='none')
         # av distil loss
         if self.use_cmc_loss:
             self.crit_cmc = nn.L1Loss(reduction='none')
@@ -221,8 +219,6 @@ class MSALM():
         model.Model.W_bn.requires_grad_(True)
         model.Model.W_text.requires_grad_(True)
         model.Model.W_av.requires_grad_(True)
-        model.Model.W_au.requires_grad_(True)
-        model.Model.W_vis.requires_grad_(True)
         if self.args.use_lnorm:
             model.Model.LN.requires_grad_(True)
         # model.Model.av_dec.requires_grad_(True)
@@ -363,9 +359,8 @@ class MSALM():
             lm_loss = 0.0
             bn_total_loss = .0
             av_total_loss = .0
-            au_total_loss = .0
-            vis_total_loss = .0
             text_total_loss = .0
+            lb_total_loss = 0.0
             # loss = .0
             left_epochs = self.args.update_epochs
             ids = []
@@ -434,13 +429,10 @@ class MSALM():
                         lm_logits = outputs['lm_logits']
                         task_logits = outputs['task_logits']
                         av_logits = outputs['av_logits']
-                        au_logits = outputs['au_logits']
-                        vis_logits = outputs['vis_logits']
                         bn_logits = outputs['bn_logits']
                         text_logits = outputs['text_logits']
                     av_logits.squeeze_(1)
-                    au_logits.squeeze_(1)
-                    vis_logits.squeeze_(1)
+
                     # compute loss
                     loss = .0
                     B, L = text_ids.size()
@@ -474,9 +466,7 @@ class MSALM():
                                 bn_loss = torch.mean(bn_loss) # average over fusion tokens and mini-batch
                             #######################################################################
                             ## av loss
-                            #print("av shape before", av_logits.shape)
                             av_logits = av_logits.unsqueeze(1)
-                            #print("av shape before", av_logits.shape)
                             if self.use_bf16:
                                 with torch.autocast(device_type='cuda', dtype=torch.bfloat16):
                                     av_loss = self.crit_av(av_logits, labels)
@@ -485,32 +475,6 @@ class MSALM():
                                 av_loss = self.crit_av(av_logits, labels)
                                 # here we can manipulate each pf the `n_bn_fusion` tokens differently if we wish
                                 av_loss = torch.mean(av_loss) # average over fusion tokens and mini-batch
-                            #######################################################################
-                            ## audio loss
-                            #print("au shape before", au_logits.shape)
-                            au_logits = au_logits.unsqueeze(1)
-                            #print("au shape after", au_logits.shape)
-                            if self.use_bf16:
-                                with torch.autocast(device_type='cuda', dtype=torch.bfloat16):
-                                    au_loss = self.crit_au(au_logits, labels)
-                                    au_loss = torch.mean(au_loss)
-                            else:
-                                au_loss = self.crit_au(au_logits, labels)
-                                # here we can manipulate each pf the `n_bn_fusion` tokens differently if we wish
-                                au_loss = torch.mean(au_loss) # average over fusion tokens and mini-batch
-                            #######################################################################
-                            ## vision loss
-                            #print("vis shape before", vis_logits.shape)
-                            vis_logits = vis_logits.unsqueeze(1)
-                            #print("au shape after", vis_logits.shape)
-                            if self.use_bf16:
-                                with torch.autocast(device_type='cuda', dtype=torch.bfloat16):
-                                    vis_loss = self.crit_vis(vis_logits, labels)
-                                    vis_loss = torch.mean(vis_loss)
-                            else:
-                                vis_loss = self.crit_vis(vis_logits, labels)
-                                # here we can manipulate each pf the `n_bn_fusion` tokens differently if we wish
-                                vis_loss = torch.mean(vis_loss) # average over fusion tokens and mini-batch
                             ###########################################################################
                             ## text loss
                             if self.use_bf16:
@@ -532,6 +496,17 @@ class MSALM():
                                     cmc_loss = self.crit_cmc(av_logits, text_logits)
                                     # here we can manipulate each pf the `n_bn_fusion` tokens differently if we wish
                                     cmc_loss = torch.mean(cmc_loss) # average over fusion tokens and mini-batch
+                            ######################################################################
+                            ## load balancing loss
+                            routing_weights = model.get_all_routing_weights()
+                            #print("VARH STIN DO_TRAIN:", routing_weights)
+                            r_bar = routing_weights.mean(dim=(0, 1, 2))
+                            #print("TO r_bar", r_bar)
+                            num_exps = r_bar.size(0)
+                            target_distr = torch.full_like(r_bar, 1.0 / num_exps)
+                            #print("to target_distr", target_distr)
+                            lb_loss = num_exps * torch.mean((r_bar - target_distr)**2)
+                            #print("to lb_loss", lb_loss.item())
                     else:
                         if self.args.dense:
                             # reweighted loss computation
@@ -619,9 +594,9 @@ class MSALM():
                                         task_loss \
                                         + self.args.l_bn * bn_loss \
                                         + self.args.l_av * av_loss \
-                                        + self.args.l_au * au_loss \
-                                        + self.args.l_vis * vis_loss \
-                                        + self.args.l_t * text_loss
+                                        + self.args.l_t * text_loss \
+                                        + self.args.l_lb * lb_loss
+
                                     if self.use_cmc_loss:
                                         loss += self.args.l_cmc * cmc_loss
                             else:
@@ -629,9 +604,8 @@ class MSALM():
                                     task_loss \
                                     + self.args.l_bn * bn_loss \
                                     + self.args.l_av * av_loss \
-                                    + self.args.l_au * au_loss \
-                                    + self.args.l_vis * vis_loss \
-                                    + self.args.l_t * text_loss
+                                    + self.args.l_t * text_loss \
+                                    + self.args.l_lb * lb_loss
                                 if self.use_cmc_loss:
                                     loss += self.args.l_cmc * cmc_loss
                                 
@@ -746,9 +720,8 @@ class MSALM():
                         if self.modded_loss:
                             bn_total_loss += bn_loss.item()
                             av_total_loss += av_loss.item()
-                            au_total_loss += au_loss.item()
-                            vis_total_loss += vis_loss.item()
                             text_total_loss += text_loss.item()
+                            lb_total_loss += lb_loss.item()
                         y_pred.append(task_logits.to(torch.float32).cpu().detach())
                         # put expanded_labels here
                         y_true.append(expanded_labels.to(torch.float32).cpu().detach())
@@ -806,15 +779,16 @@ class MSALM():
             total_loss = total_loss / len(dataloader['train'])
             bn_total_loss = bn_total_loss / len(dataloader['train'])
             av_total_loss = av_total_loss / len(dataloader['train'])
-            au_total_loss = au_total_loss / len(dataloader['train'])
-            vis_total_loss = vis_total_loss / len(dataloader['train'])
             text_total_loss = text_total_loss / len(dataloader['train'])
+            lb_total_loss = lb_total_loss / len(dataloader['train'])
             lm_loss = lm_loss / len(dataloader['train'])
             # if self.modded_loss:
             #     bn_total_loss = bn_total_loss / len(dataloader['train'])
             # mse_loss = mse_loss / len(dataloader['train'])
             # barlow_loss = barlow_loss / len(dataloader['train'])
             total_aux_loss = total_aux_loss / len(dataloader['train'])
+            # clear routing weights for this forward pass
+            model.Model._clear_routing_stats()
 
             if self.use_ulgm and epochs > self.ulgm_patience:
                 for m in self.tasks:
@@ -838,8 +812,7 @@ class MSALM():
                     f" total loss: {round(total_loss, 4)}" \
                     f" bn loss: {round(bn_total_loss, 4)}" \
                     f" av loss: {round(av_total_loss, 4)}" \
-                    f" au loss: {round(au_total_loss, 4)}" \
-                    f" vis loss: {round(vis_total_loss, 4)}" \
+                    f" lb loss: {round(lb_total_loss, 4)}" \
                     f" text loss: {round(text_total_loss, 4)}" \
                 )
             # validation
@@ -955,28 +928,28 @@ class MSALM():
                         )
                     elif self.modded_loss:
                         #with torch.autocast(device_type='cuda', dtype=torch.bfloat16):
-                        #print("EIMAI STO modded_loss")
+                        print("EIMAI STO modded_loss")
                         with torch.autocast(device_type='cuda', dtype=torch.float16):
                             outputs = model(text_ids, audio, vision, attention_mask=attention_mask)
                             task_logits = outputs['task_logits']
                             if mode == "TEST12":
-                                print("saving routing-labels")
-                                routing_stats = model.get_all_routing_weights()
+                                #print("saving routing-labels")
+                                routing_stats = model.get_all_routing_weights().detach().cpu()
                                 torch.save(
                                     routing_stats,
                                     (
                                         f"/leonardo_scratch/large/userexternal/afilippa/MoEMMSA-all/MoEMMSA/"
-                                        f"interpretability_results/sims/nf16-k1-01/routing_batch_{batch_idx}.pt"
+                                        f"interpretability_results/sims/nf16-k2-02-with-lb-no-mm-router/routing_batch_{batch_idx}.pt"
                                     )
                                 )
                                 torch.save(
                                     labels.detach().cpu(),
                                     (
                                         f"/leonardo_scratch/large/userexternal/afilippa/MoEMMSA-all/MoEMMSA/"
-                                        f"interpretability_results/sims/nf16-k1-01/labels_batch_{batch_idx}.pt"
+                                        f"interpretability_results/sims/nf16-k2-02-with-lb-no-mm-router/labels_batch_{batch_idx}.pt"
                                     )
                                 )
-
+                                model.Model._clear_routing_stats()
                                 #print(routing_stats.__class__, labels.__class__)
                             #print(routing_stats)
                             # av_logits = outputs['av_logits']

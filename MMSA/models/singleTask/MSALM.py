@@ -964,7 +964,7 @@ class MSALM(nn.Module):
         elif (self.n_bn_fusion > 0) and (self.modded_loss):
             self.d_task = config["mmgpt"].get("d_out", 64)
             self.W_task = nn.Sequential(
-                nn.Linear(2 * config.mmgpt.d_mm + 3 * config["av_enc"]["d_enc_out"], self.d_task),
+                nn.Linear(2*config.mmgpt.d_mm + config["av_enc"]["d_enc_out"], self.d_task),
                 nn.BatchNorm1d(self.d_task),
                 nn.ReLU(inplace=True),
                 nn.Linear(self.d_task, 1)
@@ -972,8 +972,6 @@ class MSALM(nn.Module):
             self.W_bn = nn.Linear(config.mmgpt.d_mm, 1)
             self.W_text = nn.Linear(config.mmgpt.d_mm, 1)
             self.W_av = nn.Linear(config["av_enc"]["d_enc_out"], 1)
-            self.W_au = nn.Linear(config["av_enc"]["d_enc_out"], 1)
-            self.W_vis = nn.Linear(config["av_enc"]["d_enc_out"], 1)
         else:
             self.W_task = nn.Linear(config.mmgpt.d_mm, 1)
         
@@ -1120,18 +1118,12 @@ class MSALM(nn.Module):
                 bn_tokens = last_hidden_states[:, self.max_token_len:, :]
                 bn_logits = self.W_bn(bn_tokens)
                 # av output
-                pooled_z_av = torch.mean(z_av, dim=1)
-                av_logits = self.W_av(pooled_z_av)
-                # audio output
-                pooled_z_a = torch.mean(z_a, dim=1)
-                au_logits = self.W_au(pooled_z_a)
-                # visual output
-                pooled_z_v = torch.mean(z_v, dim=1)
-                vis_logits = self.W_vis(pooled_z_v)
+                z_av = torch.mean(z_av, dim=1)
+                av_logits = self.W_av(z_av)
                 # global fusion output
                 avg_bn = torch.mean(bn_tokens, dim=1) # average over fusion tokens
                 task_logits = self._task_map(
-                    torch.cat((avg_bn, last_hidden_text, pooled_z_av, pooled_z_a, pooled_z_v), dim=1)
+                    torch.cat((avg_bn, last_hidden_text, z_av), dim=1)
                 )
             else:        
                 # _, l_t, _ = last_hidden_states.size()
@@ -1151,8 +1143,6 @@ class MSALM(nn.Module):
                 "av_logits": av_logits,
                 "bn_logits": bn_logits,
                 "lm_logits": lm_logits,
-                "au_logits": au_logits,
-                "vis_logits": vis_logits 
                 #"expert_usage_stats": expert_usage_stats
             } 
 
@@ -1197,6 +1187,14 @@ class MSALM(nn.Module):
         stacked = torch.stack(all_weights, dim=1)
         return stacked
 
+    def _clear_routing_stats(self):
+        """
+        Explicitly nullifies routing weights in all blocks to free up GPU memory
+        after the backward pass.
+        """
+        for block in self.moe_blocks:
+            block.routing_weights = None
+    
     def _task_map(self, h_last):
         # uses the final norm layer of the encoder (frozen)
         # h_last = self.lang_encoder.norm(h_last)
@@ -1574,8 +1572,8 @@ class MoeMMBlock(nn.Module):
 
         #self.router = SparseRouter(config, n_experts=len(self.experts), top_k=top_k, idx=layer_idx)
         #self.router = MMSparseRouter(n_experts=len(self.experts), top_k=top_k, d_av=30, d_model=768)
-        #self.router = SparseTokenRouter(config, len(self.experts), top_k)
-        self.router = SparseMMTokenRouter(config, n_experts=len(self.experts), top_k=top_k, d_av=30)
+        self.router = SparseTokenRouter(config, len(self.experts), top_k)
+        #self.router = SparseMMTokenRouter(config, n_experts=len(self.experts), top_k=top_k, d_av=30)
         #self.router = SparseMMTokenRouterExt(config, n_experts=len(self.experts), top_k=top_k, d_av=30)
         
         if "gpt" in self.lm_flavor:
@@ -1739,12 +1737,13 @@ class MoeMMBlock(nn.Module):
         norm_x_q = self.ln_1(x_q)
 
         # ---- TOKEN-WISE ROUTING ----
-        top_k_weights, top_k_indices, all_weights = self.router(norm_x_q, z_a, z_v, z_av)
+        #top_k_weights, top_k_indices, all_weights = self.router(norm_x_q, z_a, z_v, z_av)
+        top_k_weights, top_k_indices, all_weights = self.router(norm_x_q)
         # shapes: [B, T_f, K]
 
         if self.track_routing:
-            self.routing_weights = all_weights.detach().cpu()
-
+            #self.routing_weights = all_weights.detach().cpu()
+            self.routing_weights = all_weights
         delta_x_f = torch.zeros_like(x_q)
 
         contexts = [z_a, z_v, z_av]
